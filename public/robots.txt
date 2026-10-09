@@ -12,4 +12,4 @@ Disallow: /book/
 Disallow: /availability
 Disallow: /become-consultant
 
-Sitemap: https://gotcha.vercel.app/sitemap.xml
+Sitemap: https://gotcha-bd.vercel.app/sitemap.xml

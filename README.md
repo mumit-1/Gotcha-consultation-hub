@@ -17,7 +17,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Deploy on Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com)
 
-[**Live Demo**](https://gotcha.vercel.app) · [**Report a Bug**](https://github.com/your-username/gotcha/issues) · [**Request a Feature**](https://github.com/your-username/gotcha/issues)
+[**Live Demo**](https://gotcha-bd.vercel.app) · [**Report a Bug**](https://github.com/your-username/gotcha/issues) · [**Request a Feature**](https://github.com/your-username/gotcha/issues)
 
 </div>
 
@@ -33,42 +33,42 @@ Gotcha is a free consultation marketplace built for university students. Any ver
 
 ## ✨ Features
 
-| Feature | Details |
-|---|---|
-| 🔐 **Auth** | Email/password registration, email verification enforcement, password reset via Firebase |
-| 🧑‍💼 **Consultant Profiles** | Bio, skills, experience, courses, pricing (default FREE), photo via Cloudinary |
-| 📚 **500+ Courses** | Searchable multi-select CourseSelector with every code from CSE to LAW to MAT |
-| 🗓️ **Availability** | Weekly recurring schedules in Bangladesh time (Asia/Dhaka, UTC+6), manual busy toggle, computed Available/Busy/Offline status |
-| 🔍 **Find Consultants** | Filter by course, name, availability, price; sort by rating; paginated; fast composite indexes |
-| 📩 **Booking Flow** | PENDING → ACCEPTED → IN_PROGRESS → COMPLETED state machine with slot-lock double-booking protection |
-| 🔒 **Slot Locks** | Firestore transaction locks every 30-min block; two overlapping accepts can never both succeed |
-| 🤖 **Lazy Sweeper** | Browser-side background process auto-cancels expired/overlapping requests and persists time-derived statuses |
-| 📧 **Emails** | EmailJS for 6 email types (request, accepted with WhatsApp link, rejected, cancelled, auto-cancelled, completed) |
-| 🏠 **Dashboard** | TODAY timeline, pending requests panel, upcoming sessions, quick navigation |
-| 🔔 **Notifications** | Real-time in-app notification center with mark-as-read |
-| ⭐ **Reviews** | 1–5 star ratings + written reviews; consultant rating computed via Firestore transaction |
-| 🚩 **Reports & Blocks** | 6 report types; blocked users cannot book each other |
-| 🛡️ **Admin Panel** | User/consultant management, report queue, booking overview, platform settings |
-| 🎨 **Neo-Brutalism UI** | Space Grotesk font, hard black borders, offset solid shadows, Framer Motion animations |
-| 📱 **Fully Responsive** | Mobile-first, works on all screen sizes |
-| 🔍 **SEO** | Full meta tags, Open Graph, Twitter Card, JSON-LD schema, sitemap.xml, robots.txt |
+| Feature                    | Details                                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 🔐 **Auth**                | Email/password registration, email verification enforcement, password reset via Firebase                                      |
+| 🧑‍💼 **Consultant Profiles** | Bio, skills, experience, courses, pricing (default FREE), photo via Cloudinary                                                |
+| 📚 **500+ Courses**        | Searchable multi-select CourseSelector with every code from CSE to LAW to MAT                                                 |
+| 🗓️ **Availability**        | Weekly recurring schedules in Bangladesh time (Asia/Dhaka, UTC+6), manual busy toggle, computed Available/Busy/Offline status |
+| 🔍 **Find Consultants**    | Filter by course, name, availability, price; sort by rating; paginated; fast composite indexes                                |
+| 📩 **Booking Flow**        | PENDING → ACCEPTED → IN_PROGRESS → COMPLETED state machine with slot-lock double-booking protection                           |
+| 🔒 **Slot Locks**          | Firestore transaction locks every 30-min block; two overlapping accepts can never both succeed                                |
+| 🤖 **Lazy Sweeper**        | Browser-side background process auto-cancels expired/overlapping requests and persists time-derived statuses                  |
+| 📧 **Emails**              | EmailJS for 6 email types (request, accepted with WhatsApp link, rejected, cancelled, auto-cancelled, completed)              |
+| 🏠 **Dashboard**           | TODAY timeline, pending requests panel, upcoming sessions, quick navigation                                                   |
+| 🔔 **Notifications**       | Real-time in-app notification center with mark-as-read                                                                        |
+| ⭐ **Reviews**             | 1–5 star ratings + written reviews; consultant rating computed via Firestore transaction                                      |
+| 🚩 **Reports & Blocks**    | 6 report types; blocked users cannot book each other                                                                          |
+| 🛡️ **Admin Panel**         | User/consultant management, report queue, booking overview, platform settings                                                 |
+| 🎨 **Neo-Brutalism UI**    | Space Grotesk font, hard black borders, offset solid shadows, Framer Motion animations                                        |
+| 📱 **Fully Responsive**    | Mobile-first, works on all screen sizes                                                                                       |
+| 🔍 **SEO**                 | Full meta tags, Open Graph, Twitter Card, JSON-LD schema, sitemap.xml, robots.txt                                             |
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 19, Vite 8, Tailwind CSS 3 |
-| Routing | React Router DOM v7 |
-| Backend | Firebase (Auth + Firestore) — Spark free plan only |
-| Animations | Framer Motion, react-countup, react-intersection-observer |
-| UI | lucide-react, react-hot-toast, react-fast-marquee |
-| Photos | Cloudinary (unsigned upload preset, free tier) |
-| Emails | EmailJS browser SDK (free tier, 200 emails/month) |
-| Dates | date-fns |
-| Image compression | browser-image-compression |
-| Hosting | Vercel (primary) + Firebase Hosting (optional) |
+| Layer             | Technology                                                |
+| ----------------- | --------------------------------------------------------- |
+| Frontend          | React 19, Vite 8, Tailwind CSS 3                          |
+| Routing           | React Router DOM v7                                       |
+| Backend           | Firebase (Auth + Firestore) — Spark free plan only        |
+| Animations        | Framer Motion, react-countup, react-intersection-observer |
+| UI                | lucide-react, react-hot-toast, react-fast-marquee         |
+| Photos            | Cloudinary (unsigned upload preset, free tier)            |
+| Emails            | EmailJS browser SDK (free tier, 200 emails/month)         |
+| Dates             | date-fns                                                  |
+| Image compression | browser-image-compression                                 |
+| Hosting           | Vercel (primary) + Firebase Hosting (optional)            |
 
 ---
 
@@ -242,15 +242,15 @@ npx firebase deploy --only hosting
 
 Gotcha has **no server**. All security is enforced in Firestore rules:
 
-| Rule | Description |
-|---|---|
-| `email_verified` | Unverified users cannot create bookings or consultant profiles |
-| `notSuspended()` | Suspended/banned users are blocked from all writes |
-| Local course catalog | Consultant course choices come from `src/data/courses.js`; no Firestore seed required |
-| Slot lock `create-if-absent` | Prevents double-acceptance of overlapping bookings |
-| Booking participant check | Only the two participants can read/update a booking |
-| Admin collection | `admins/{uid}` existence check; write is `false` (console only) |
-| Protected fields | Users cannot write their own `status`, `ratingSum`, `isVerified`, or `isConsultant` |
+| Rule                         | Description                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
+| `email_verified`             | Unverified users cannot create bookings or consultant profiles                        |
+| `notSuspended()`             | Suspended/banned users are blocked from all writes                                    |
+| Local course catalog         | Consultant course choices come from `src/data/courses.js`; no Firestore seed required |
+| Slot lock `create-if-absent` | Prevents double-acceptance of overlapping bookings                                    |
+| Booking participant check    | Only the two participants can read/update a booking                                   |
+| Admin collection             | `admins/{uid}` existence check; write is `false` (console only)                       |
+| Protected fields             | Users cannot write their own `status`, `ratingSum`, `isVerified`, or `isConsultant`   |
 
 ---
 
@@ -258,14 +258,14 @@ Gotcha has **no server**. All security is enforced in Firestore rules:
 
 Create 6 templates in EmailJS. Each template must include the variable names below (wrap in `{{double_braces}}`):
 
-| Template Env Var | Key Variables |
-|---|---|
-| `TEMPLATE_REQUEST` | `to_email`, `to_name`, `from_name`, `course`, `topic`, `date`, `time`, `duration`, `price`, `booking_id` |
-| `TEMPLATE_ACCEPTED` | `to_email`, `to_name`, `consultant_name`, `course`, `topic`, `date`, `time`, `duration`, `price`, `whatsapp_link`, `booking_id` |
-| `TEMPLATE_REJECTED` | `to_email`, `to_name`, `consultant_name`, `course`, `date`, `time`, `booking_id` |
-| `TEMPLATE_CANCELLED` | `to_email`, `to_name`, `cancelled_by`, `course`, `date`, `time`, `reason`, `booking_id` |
-| `TEMPLATE_AUTOCANCELLED` | `to_email`, `to_name`, `other_name`, `course`, `date`, `time`, `reason`, `booking_id` |
-| `TEMPLATE_COMPLETED` | `to_email`, `to_name`, `other_name`, `course`, `date`, `booking_id` |
+| Template Env Var         | Key Variables                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `TEMPLATE_REQUEST`       | `to_email`, `to_name`, `from_name`, `course`, `topic`, `date`, `time`, `duration`, `price`, `booking_id`                        |
+| `TEMPLATE_ACCEPTED`      | `to_email`, `to_name`, `consultant_name`, `course`, `topic`, `date`, `time`, `duration`, `price`, `whatsapp_link`, `booking_id` |
+| `TEMPLATE_REJECTED`      | `to_email`, `to_name`, `consultant_name`, `course`, `date`, `time`, `booking_id`                                                |
+| `TEMPLATE_CANCELLED`     | `to_email`, `to_name`, `cancelled_by`, `course`, `date`, `time`, `reason`, `booking_id`                                         |
+| `TEMPLATE_AUTOCANCELLED` | `to_email`, `to_name`, `other_name`, `course`, `date`, `time`, `reason`, `booking_id`                                           |
+| `TEMPLATE_COMPLETED`     | `to_email`, `to_name`, `other_name`, `course`, `date`, `booking_id`                                                             |
 
 ---
 
@@ -289,14 +289,14 @@ config/settings                 Platform settings
 
 ## ⚠️ Free Tier Limits & Mitigations
 
-| Service | Free Limit | Approach |
-|---|---|---|
-| Firestore reads | 50K/day | Paginated queries, no broad listeners |
-| Firestore writes | 20K/day | Writes only on user actions |
-| EmailJS | 200 emails/month | 5-per-hour client throttle; failures shown in UI |
-| Cloudinary | 25GB storage | Client-side compress to ≤300KB before upload |
-| Firebase Auth | Unlimited on Spark | ✓ |
-| Firebase Hosting | 10GB/month | Use Vercel as primary |
+| Service          | Free Limit         | Approach                                         |
+| ---------------- | ------------------ | ------------------------------------------------ |
+| Firestore reads  | 50K/day            | Paginated queries, no broad listeners            |
+| Firestore writes | 20K/day            | Writes only on user actions                      |
+| EmailJS          | 200 emails/month   | 5-per-hour client throttle; failures shown in UI |
+| Cloudinary       | 25GB storage       | Client-side compress to ≤300KB before upload     |
+| Firebase Auth    | Unlimited on Spark | ✓                                                |
+| Firebase Hosting | 10GB/month         | Use Vercel as primary                            |
 
 ---
 
