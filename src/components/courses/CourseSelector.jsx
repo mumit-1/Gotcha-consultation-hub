@@ -16,6 +16,7 @@ import COURSES from '../../data/courses'
 export default function CourseSelector({
   selected = [],
   onChange,
+  options = COURSES,
   single = false,
   placeholder = 'Search courses (e.g. CSE221)…',
   maxVisible = 5,
@@ -29,9 +30,9 @@ export default function CourseSelector({
   // Filter courses by query
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase()
-    if (!q) return COURSES.slice(0, 80) // show first 80 when no query
-    return COURSES.filter(c => c.toUpperCase().includes(q)).slice(0, 60)
-  }, [query])
+    if (!q) return options.slice(0, 80) // show first 80 when no query
+    return options.filter(c => c.toUpperCase().includes(q)).slice(0, 60)
+  }, [options, query])
 
   // Close on outside click
   useEffect(() => {

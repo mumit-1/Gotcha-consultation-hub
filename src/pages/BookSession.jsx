@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { doc, getDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { createBooking } from '../lib/bookingService'
@@ -13,10 +13,11 @@ import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Textarea from '../components/ui/Textarea'
 import AnimatedSection from '../components/ui/AnimatedSection'
-import { ArrowLeft, Clock, DollarSign, AlertTriangle } from 'lucide-react'
-import { addMinutes, format, isBefore, parseISO } from 'date-fns'
+import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { isBefore } from 'date-fns'
 import toast from 'react-hot-toast'
 import { emailBookingRequest } from '../lib/emailjs'
+import { DHAKA_TIME_ZONE, formatDhaka, formatDhakaDateInput, parseDhakaDateTime } from '../lib/dhakaTime'
 
 export default function BookSession() {
   const { consultantId }        = useParams()
@@ -30,10 +31,16 @@ export default function BookSession() {
     course: [], topic: '', date: '', time: '', duration: 30,
   })
   const [errors, setErrors]     = useState({})
+  const offeredCourses = Array.isArray(consultant?.courses) ? consultant.courses : []
 
   useEffect(() => {
     getDoc(doc(db, 'consultants', consultantId))
-      .then(snap => { if (snap.exists()) setConsultant({ id: snap.id, ...snap.data() }) })
+      .then(snap => {
+        if (snap.exists()) {
+          setConsultant({ id: snap.id, ...snap.data() })
+          setForm(form => ({ ...form, course: [] }))
+        }
+      })
       .finally(() => setLoading(false))
   }, [consultantId])
 
@@ -45,14 +52,16 @@ export default function BookSession() {
 
   const validate = () => {
     const e = {}
-    if (form.course.length === 0)          e.course   = 'Select a course'
+    if (!offeredCourses.includes(form.course[0])) e.course = 'Select a course this consultant offers'
     if (!form.topic.trim())                e.topic    = 'Describe your topic'
     if (!form.date)                        e.date     = 'Pick a date'
     if (!form.time)                        e.time     = 'Pick a time'
     if (form.duration < 30)               e.duration = 'Minimum 30 minutes'
     if (form.date && form.time) {
-      const dt = new Date(`${form.date}T${form.time}`)
-      if (isBefore(dt, new Date())) e.date = 'Cannot book in the past'
+      const dateTime = parseDhakaDateTime(form.date, form.time)
+      if (Number.isNaN(dateTime.getTime()) || isBefore(dateTime, new Date())) {
+        e.date = 'Choose a valid future date and time (Bangladesh time)'
+      }
     }
     return e
   }
@@ -67,7 +76,7 @@ export default function BookSession() {
 
     setSubmitting(true)
     try {
-      const startUtc = new Date(`${form.date}T${form.time}`)
+      const startUtc = parseDhakaDateTime(form.date, form.time)
 
       // Fetch consultant user doc for email
       const cUserSnap = await getDoc(doc(db, 'users', consultantId))
@@ -94,8 +103,8 @@ export default function BookSession() {
         clientName: userDoc?.name || '',
         course: form.course[0],
         topic: form.topic.trim(),
-        date: format(startUtc, 'MMM d, yyyy'),
-        time: format(startUtc, 'h:mm a'),
+        date: formatDhaka(startUtc, { dateStyle: 'medium' }),
+        time: formatDhaka(startUtc, { timeStyle: 'short' }),
         duration: `${form.duration} min`,
         price: calcPrice() ?? 0,
         bookingId,
@@ -127,7 +136,7 @@ export default function BookSession() {
 
   const isFree  = !consultant.price30min || consultant.price30min === 0
   const price   = calcPrice()
-  const today   = format(new Date(), 'yyyy-MM-dd')
+  const today   = formatDhakaDateInput()
 
   return (
     <PageLayout>
@@ -166,14 +175,21 @@ export default function BookSession() {
                   <CourseSelector
                     selected={form.course}
                     onChange={codes => setForm(f => ({ ...f, course: codes }))}
+                    options={offeredCourses}
                     single
                     label="Course"
-                    placeholder="Pick one course from the consultant's list…"
+                    placeholder={offeredCourses.length
+                      ? "Pick a course this consultant offers…"
+                      : 'This consultant has not listed any courses'}
                     error={errors.course}
                   />
-                  {consultant.courses?.length > 0 && (
+                  {offeredCourses.length > 0 ? (
                     <p className="mt-2 font-bold text-xs text-black/50">
-                      This consultant offers: {consultant.courses.join(', ')}
+                      Choose from this consultant’s {offeredCourses.length} listed course{offeredCourses.length === 1 ? '' : 's'}.
+                    </p>
+                  ) : (
+                    <p className="mt-2 font-bold text-xs text-neo-accent">
+                      This consultant has no listed courses and cannot receive a booking yet.
                     </p>
                   )}
                 </div>
@@ -191,7 +207,7 @@ export default function BookSession() {
               <div className="card p-6 shadow-neo-md">
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <Input
-                    label="Date"
+                    label="Date (Bangladesh time)"
                     type="date"
                     min={today}
                     value={form.date}
@@ -199,7 +215,7 @@ export default function BookSession() {
                     error={errors.date}
                   />
                   <Input
-                    label="Start Time"
+                    label={`Start Time (${DHAKA_TIME_ZONE}, UTC+6)`}
                     type="time"
                     value={form.time}
                     onChange={e => setForm(f => ({ ...f, time: e.target.value }))}

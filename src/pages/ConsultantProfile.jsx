@@ -8,9 +8,9 @@ import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import Avatar from '../components/ui/Avatar'
 import { AvailabilityBadge } from '../components/ui/Badge'
+import { computeDhakaAvailabilityStatus, formatDhaka } from '../lib/dhakaTime'
 import AnimatedSection from '../components/ui/AnimatedSection'
 import { Star, MessageCircle, BookOpen, Award, ChevronRight } from 'lucide-react'
-import { format } from 'date-fns'
 import ReportModal from '../components/reports/ReportModal'
 
 function StarRatingDisplay({ rating, count }) {
@@ -104,7 +104,7 @@ export default function ConsultantProfile() {
                     <Award className="h-3 w-3" strokeWidth={3} /> Verified
                   </span>
                 )}
-                <AvailabilityBadge status={computeStatus(consultant)} />
+                <AvailabilityBadge status={computeDhakaAvailabilityStatus(consultant)} />
               </div>
 
               {rating && <div className="mb-3"><StarRatingDisplay rating={rating} count={consultant.ratingCount} /></div>}
@@ -216,7 +216,9 @@ export default function ConsultantProfile() {
                           </div>
                           <span className="font-black text-xs uppercase tracking-wide">{review.stars}/5</span>
                           <span className="ml-auto font-bold text-xs text-black/50">
-                            {review.createdAt?.toDate ? format(review.createdAt.toDate(), 'MMM d, yyyy') : ''}
+                            {review.createdAt?.toDate
+                              ? formatDhaka(review.createdAt.toDate(), { dateStyle: 'medium' })
+                              : ''}
                           </span>
                         </div>
                         {review.review && (
@@ -270,17 +272,4 @@ export default function ConsultantProfile() {
       />
     </PageLayout>
   )
-}
-
-function computeStatus(c) {
-  const now = Date.now()
-  if (c.manualBusy?.until && c.manualBusy.until.toMillis() > now) return 'busy'
-  if (!c.availability || Object.keys(c.availability).length === 0) return 'offline'
-  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
-  const d = new Date(now)
-  const dayName = days[d.getUTCDay()]
-  const ranges = c.availability[dayName] || []
-  if (!ranges.length) return 'offline'
-  const hhmm = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
-  return ranges.some(r => hhmm >= r.start && hhmm < r.end) ? 'available' : 'offline'
 }

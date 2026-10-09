@@ -11,19 +11,16 @@ import Textarea from '../components/ui/Textarea'
 import Button from '../components/ui/Button'
 import { Save, Link as LinkIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
-
-const TIMEZONES = Intl.supportedValuesOf
-  ? Intl.supportedValuesOf('timeZone')
-  : ['UTC', 'Asia/Dhaka', 'America/New_York', 'Europe/London', 'Asia/Kolkata']
+import { DHAKA_TIME_ZONE } from '../lib/dhakaTime'
 
 export default function Profile() {
   const { userDoc, firebaseUser } = useAuth()
-  const [form, setForm]   = useState({ name: '', bio: '', timezone: '' })
+  const [form, setForm]   = useState({ name: '', bio: '', timezone: DHAKA_TIME_ZONE })
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (userDoc) {
-      setForm({ name: userDoc.name || '', bio: userDoc.bio || '', timezone: userDoc.timezone || 'UTC' })
+      setForm({ name: userDoc.name || '', bio: userDoc.bio || '', timezone: DHAKA_TIME_ZONE })
     }
   }, [userDoc])
 
@@ -95,16 +92,8 @@ export default function Profile() {
                   rows={3}
                 />
                 <div>
-                  <label className="label">Timezone</label>
-                  <select
-                    className="select"
-                    value={form.timezone}
-                    onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}
-                  >
-                    {TIMEZONES.map(tz => (
-                      <option key={tz} value={tz}>{tz}</option>
-                    ))}
-                  </select>
+                  <label className="label">Site Timezone</label>
+                  <p className="font-bold text-sm">Bangladesh time ({DHAKA_TIME_ZONE}, UTC+6)</p>
                 </div>
               </div>
             </div>

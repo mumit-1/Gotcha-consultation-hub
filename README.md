@@ -38,7 +38,7 @@ Gotcha is a free consultation marketplace built for university students. Any ver
 | 🔐 **Auth** | Email/password registration, email verification enforcement, password reset via Firebase |
 | 🧑‍💼 **Consultant Profiles** | Bio, skills, experience, courses, pricing (default FREE), photo via Cloudinary |
 | 📚 **500+ Courses** | Searchable multi-select CourseSelector with every code from CSE to LAW to MAT |
-| 🗓️ **Availability** | Weekly recurring schedules (UTC), manual busy toggle, computed Available/Busy/Offline status |
+| 🗓️ **Availability** | Weekly recurring schedules in Bangladesh time (Asia/Dhaka, UTC+6), manual busy toggle, computed Available/Busy/Offline status |
 | 🔍 **Find Consultants** | Filter by course, name, availability, price; sort by rating; paginated; fast composite indexes |
 | 📩 **Booking Flow** | PENDING → ACCEPTED → IN_PROGRESS → COMPLETED state machine with slot-lock double-booking protection |
 | 🔒 **Slot Locks** | Firestore transaction locks every 30-min block; two overlapping accepts can never both succeed |

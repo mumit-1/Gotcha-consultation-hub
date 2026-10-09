@@ -15,6 +15,7 @@ import { AvailabilityBadge, StatusBadge } from '../components/ui/Badge'
 import AnimatedSection from '../components/ui/AnimatedSection'
 import { Star, Search, X, Filter, ChevronRight, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { computeDhakaAvailabilityStatus } from '../lib/dhakaTime'
 
 const PAGE_SIZE = 12
 
@@ -151,7 +152,7 @@ export default function FindConsultants() {
       const now = Date.now()
       docs = docs.map(c => ({
         ...c,
-        computedStatus: computeStatus(c, now),
+        computedStatus: computeDhakaAvailabilityStatus(c, now),
       }))
 
       // Filter by availability
@@ -334,20 +335,4 @@ export default function FindConsultants() {
       </div>
     </PageLayout>
   )
-}
-
-/** Compute consultant availability status in the browser */
-function computeStatus(c, now) {
-  if (c.manualBusy?.until && c.manualBusy.until.toMillis() > now) return 'busy'
-  if (!c.availability || Object.keys(c.availability).length === 0) return 'offline'
-
-  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
-  const d = new Date(now)
-  const dayName = days[d.getUTCDay()]
-  const ranges = c.availability[dayName] || []
-  if (ranges.length === 0) return 'offline'
-
-  const hhmm = `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
-  const inRange = ranges.some(r => hhmm >= r.start && hhmm < r.end)
-  return inRange ? 'available' : 'offline'
 }

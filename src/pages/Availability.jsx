@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
 import PageLayout from '../components/layout/PageLayout'
@@ -9,13 +9,14 @@ import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import { Plus, Trash2, Clock, ToggleLeft, ToggleRight, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { DHAKA_TIME_ZONE, formatDhaka, parseDhakaDateTimeInput } from '../lib/dhakaTime'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 
 const DEFAULT_RANGE = { start: '09:00', end: '17:00' }
 
 export default function Availability() {
-  const { firebaseUser, userDoc } = useAuth()
+  const { firebaseUser } = useAuth()
   const [weekly, setWeekly]   = useState(() => Object.fromEntries(DAYS.map(d => [d, []])))
   const [manualBusy, setManualBusy] = useState(null)
   const [busyUntil, setBusyUntil] = useState('')
@@ -78,7 +79,12 @@ export default function Availability() {
       toast.success('You are no longer manually busy')
     } else {
       if (!busyUntil) { toast.error('Set a "busy until" time first'); return }
-      const until = Timestamp.fromDate(new Date(busyUntil))
+      const untilDate = parseDhakaDateTimeInput(busyUntil)
+      if (Number.isNaN(untilDate.getTime()) || untilDate.getTime() <= Date.now()) {
+        toast.error('Choose a future date and time')
+        return
+      }
+      const until = Timestamp.fromDate(untilDate)
       setManualBusy({ until })
       await setDoc(doc(db, 'consultants', firebaseUser.uid), { manualBusy: { until }, updatedAt: serverTimestamp() }, { merge: true })
       toast.success('Set as busy until ' + busyUntil)
@@ -95,7 +101,9 @@ export default function Availability() {
       <div className="border-b-4 border-black bg-neo-secondary">
         <div className="page-container py-8">
           <h1 className="font-black text-4xl uppercase tracking-tight">Availability</h1>
-          <p className="font-bold text-black/70 text-sm mt-1">Set your weekly schedule (UTC). Clients will see Available/Busy/Offline.</p>
+          <p className="font-bold text-black/70 text-sm mt-1">
+            Set your weekly schedule in Bangladesh time ({DHAKA_TIME_ZONE}, UTC+6). Clients will see Available/Busy/Offline.
+          </p>
         </div>
       </div>
 
@@ -106,7 +114,7 @@ export default function Availability() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="flex-1">
               <Input
-                label="Mark yourself busy until"
+                label="Mark yourself busy until (Bangladesh time)"
                 type="datetime-local"
                 value={busyUntil}
                 onChange={e => setBusyUntil(e.target.value)}
@@ -123,7 +131,10 @@ export default function Availability() {
           </div>
           {isBusy && (
             <p className="mt-2 font-black text-xs uppercase text-neo-accent">
-              You are currently busy until {manualBusy.until?.toDate?.().toLocaleString()}
+              You are currently busy until {formatDhaka(manualBusy.until.toDate(), {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })} Bangladesh time
             </p>
           )}
         </div>
@@ -135,7 +146,7 @@ export default function Availability() {
               <div className={`border-b-4 border-black px-4 py-3 flex items-center justify-between ${weekly[day]?.length > 0 ? 'bg-neo-green' : 'bg-neo-bg'}`}>
                 <h3 className="font-black text-sm uppercase tracking-wide">
                   {day.charAt(0).toUpperCase() + day.slice(1)}
-                  <span className="ml-2 font-bold text-xs text-black/50">UTC</span>
+                  <span className="ml-2 font-bold text-xs text-black/50">Bangladesh time (UTC+6)</span>
                 </h3>
                 <button
                   onClick={() => addRange(day)}

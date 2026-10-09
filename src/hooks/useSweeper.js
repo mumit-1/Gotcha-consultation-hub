@@ -6,7 +6,7 @@ import {
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { emailBookingCancelled } from '../lib/emailjs'
-import { format } from 'date-fns'
+import { formatDhaka } from '../lib/dhakaTime'
 
 const INTERVAL_MS  = 3 * 60 * 1000 // run every 3 minutes while app is open
 
@@ -115,8 +115,8 @@ export function useSweeper() {
             toName: consultantSnap.data()?.name,
             byName: userDoc?.name || 'The client',
             course: cancelledBooking.course,
-            date: format(start, 'MMM d, yyyy'),
-            time: format(start, 'h:mm a'),
+            date: formatDhaka(start, { dateStyle: 'medium' }),
+            time: formatDhaka(start, { timeStyle: 'short' }),
             reason: 'Another booking was accepted for this time.',
             bookingId: pendingDoc.id,
           })

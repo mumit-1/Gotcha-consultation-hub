@@ -12,14 +12,15 @@ import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import Avatar from '../components/ui/Avatar'
 import { StatusBadge, AvailabilityBadge } from '../components/ui/Badge'
 import Button from '../components/ui/Button'
+import CancelBookingModal from '../components/booking/CancelBookingModal'
 import AnimatedSection from '../components/ui/AnimatedSection'
 import { Link } from 'react-router-dom'
-import { acceptBooking, rejectBooking, cancelBooking } from '../lib/bookingService'
-import { format, isToday, isTomorrow, formatDistanceToNow } from 'date-fns'
+import { acceptBooking, rejectBooking } from '../lib/bookingService'
 import toast from 'react-hot-toast'
 import { Clock, BookOpen, CheckCircle, XCircle, ChevronRight, Zap } from 'lucide-react'
+import { formatDhaka, isSameDhakaDate } from '../lib/dhakaTime'
 
-function BookingRow({ booking, onAccept, onReject, onCancel, currentUid }) {
+function BookingRow({ booking, onAccept, onReject, onRequestCancel, currentUid }) {
   const [acting, setActing] = useState(false)
   const isConsultant = booking.consultantId === currentUid
   const start = booking.startUtc?.toDate?.() ?? new Date(booking.startUtc)
@@ -44,7 +45,7 @@ function BookingRow({ booking, onAccept, onReject, onCancel, currentUid }) {
         </div>
         <p className="font-bold text-sm truncate">{booking.topic}</p>
         <p className="font-bold text-xs text-black/50 mt-0.5">
-          {format(start, 'MMM d, h:mm a')} · {booking.durationMin} min
+          {formatDhaka(start, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Bangladesh time · {booking.durationMin} min
         </p>
       </div>
 
@@ -72,10 +73,7 @@ function BookingRow({ booking, onAccept, onReject, onCancel, currentUid }) {
         {['PENDING','ACCEPTED'].includes(booking.status) && (
           <Button
             variant="outline" size="sm"
-            onClick={() => {
-              const reason = window.prompt('Reason for cancellation (optional):')
-              act(onCancel, booking.id, currentUid, reason)
-            }}
+            onClick={() => onRequestCancel(booking)}
           >
             Cancel
           </Button>
@@ -92,6 +90,7 @@ export default function Dashboard() {
   useSweeper()
   const { firebaseUser, userDoc } = useAuth()
   const [bookings, setBookings]   = useState([])
+  const [cancelTarget, setCancelTarget] = useState(null)
   const [loading, setLoading]     = useState(true)
 
   // Listen to user's own bookings (onSnapshot on small personal set — safe)
@@ -129,8 +128,8 @@ export default function Dashboard() {
 
   // Partition bookings
   const now = Date.now()
-  const todayBookings    = bookings.filter(b => b.startUtc && isToday(b.startUtc.toDate()))
-  const upcomingBookings = bookings.filter(b => b.startUtc && !isToday(b.startUtc.toDate()) && b.startUtc.toMillis() > now && ['PENDING','ACCEPTED'].includes(b.status))
+  const todayBookings    = bookings.filter(b => b.startUtc && isSameDhakaDate(b.startUtc.toDate(), new Date(now)))
+  const upcomingBookings = bookings.filter(b => b.startUtc && !isSameDhakaDate(b.startUtc.toDate(), new Date(now)) && b.startUtc.toMillis() > now && ['PENDING','ACCEPTED'].includes(b.status))
   const pendingRequests  = bookings.filter(b => b.status === 'PENDING' && b.consultantId === firebaseUser?.uid)
 
   return (
@@ -148,7 +147,7 @@ export default function Dashboard() {
                 </span>
               </h1>
               <p className="font-bold text-black/60 mt-2">
-                {format(new Date(), 'EEEE, MMMM d')} · Here's what's happening.
+                {formatDhaka(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })} · Bangladesh time
               </p>
             </div>
             <div className="flex gap-3">
@@ -180,7 +179,7 @@ export default function Dashboard() {
                       currentUid={firebaseUser.uid}
                       onAccept={acceptBooking}
                       onReject={rejectBooking}
-                      onCancel={cancelBooking}
+                      onRequestCancel={setCancelTarget}
                     />
                   ))}
                 </AnimatePresence>
@@ -206,7 +205,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-3">
                   {todayBookings.map(b => (
-                    <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={acceptBooking} onReject={rejectBooking} onCancel={cancelBooking} />
+                    <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={acceptBooking} onReject={rejectBooking} onRequestCancel={setCancelTarget} />
                   ))}
                 </div>
               )}
@@ -224,7 +223,7 @@ export default function Dashboard() {
               </div>
               <div className="p-4 space-y-3">
                 {upcomingBookings.slice(0, 5).map(b => (
-                  <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={acceptBooking} onReject={rejectBooking} onCancel={cancelBooking} />
+                  <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={acceptBooking} onReject={rejectBooking} onRequestCancel={setCancelTarget} />
                 ))}
               </div>
             </div>
@@ -245,6 +244,12 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+      <CancelBookingModal
+        key={cancelTarget?.id ?? 'closed'}
+        booking={cancelTarget}
+        currentUid={firebaseUser.uid}
+        onClose={() => setCancelTarget(null)}
+      />
     </PageLayout>
   )
 }

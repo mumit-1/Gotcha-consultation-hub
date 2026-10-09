@@ -11,14 +11,15 @@ import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import { StatusBadge } from '../components/ui/Badge'
 import Button from '../components/ui/Button'
+import CancelBookingModal from '../components/booking/CancelBookingModal'
 // import AnimatedSection from '../components/ui/AnimatedSection'
-import { acceptBooking, rejectBooking, cancelBooking } from '../lib/bookingService'
+import { acceptBooking, rejectBooking } from '../lib/bookingService'
 import ReviewModal from '../components/reviews/ReviewModal'
-import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { formatDhaka } from '../lib/dhakaTime'
 
-function BookingCard({ b, currentUid, onReview }) {
+function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
   const [expanded, setExpanded] = useState(false)
   const [acting, setActing]     = useState(false)
   const isConsultant = b.consultantId === currentUid
@@ -49,7 +50,13 @@ function BookingCard({ b, currentUid, onReview }) {
           </div>
           <p className="font-bold text-sm truncate">{b.topic}</p>
           <p className="font-bold text-xs text-black/50">
-            {format(start, 'MMM d, yyyy · h:mm a')} · {b.durationMin} min
+            {formatDhaka(start, {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })} Bangladesh time · {b.durationMin} min
           </p>
         </div>
         {expanded ? <ChevronUp className="h-4 w-4" strokeWidth={3} /> : <ChevronDown className="h-4 w-4" strokeWidth={3} />}
@@ -111,10 +118,7 @@ function BookingCard({ b, currentUid, onReview }) {
                 )}
                 {['PENDING','ACCEPTED'].includes(b.status) && (
                   <Button size="sm" variant="outline" loading={acting}
-                    onClick={() => {
-                      const r = window.prompt('Reason (optional):')
-                      act(cancelBooking, b.id, currentUid, r)
-                    }}
+                    onClick={() => onRequestCancel(b)}
                   >
                     Cancel
                   </Button>
@@ -154,6 +158,7 @@ export default function MyConsultations() {
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState('all')
   const [reviewTarget, setReviewTarget] = useState(null)
+  const [cancelTarget, setCancelTarget] = useState(null)
 
   useEffect(() => {
     if (!firebaseUser) return
@@ -213,7 +218,13 @@ export default function MyConsultations() {
           <div className="space-y-3">
             <AnimatePresence>
               {filtered.map(b => (
-                <BookingCard key={b.id} b={b} currentUid={firebaseUser.uid} onReview={setReviewTarget} />
+                <BookingCard
+                  key={b.id}
+                  b={b}
+                  currentUid={firebaseUser.uid}
+                  onReview={setReviewTarget}
+                  onRequestCancel={setCancelTarget}
+                />
               ))}
             </AnimatePresence>
           </div>
@@ -227,6 +238,12 @@ export default function MyConsultations() {
           onClose={() => setReviewTarget(null)}
         />
       )}
+      <CancelBookingModal
+        key={cancelTarget?.id ?? 'closed'}
+        booking={cancelTarget}
+        currentUid={firebaseUser.uid}
+        onClose={() => setCancelTarget(null)}
+      />
     </PageLayout>
   )
 }

@@ -1,4 +1,5 @@
 import emailjs from '@emailjs/browser'
+import { DHAKA_TIME_ZONE } from './dhakaTime'
 
 const SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID
 const PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
@@ -55,7 +56,7 @@ export function emailBookingRequest({ consultantEmail, consultantName, clientNam
 Course: ${course}
 Topic: ${topic}
 Date: ${date}
-Time: ${time}
+time: ${time} (${DHAKA_TIME_ZONE}, UTC+6)
 Duration: ${duration}
 Price: ${price === 0 ? 'FREE' : `${price} (estimated)`}
 Booking ID: ${bookingId}
@@ -77,7 +78,7 @@ export function emailBookingAccepted({ clientEmail, clientName, consultantName, 
 Course: ${course}
 Topic: ${topic}
 Date: ${date}
-Time: ${time}
+time: ${time} (${DHAKA_TIME_ZONE}, UTC+6)
 Duration: ${duration}
 Price: ${priceText(price)}
 Booking ID: ${bookingId}
@@ -93,7 +94,7 @@ export function emailBookingRejected({ clientEmail, clientName, consultantName, 
     toName: clientName,
     subject: 'Update on your consultation request',
     message:
-`${consultantName} could not accept your request for ${course} on ${date} at ${time}.
+`${consultantName} could not accept your request for ${course} on ${date} at ${time} (${DHAKA_TIME_ZONE}, UTC+6).
 You can try another time or another consultant on Gotcha.
 
 Booking ID: ${bookingId}`,
@@ -107,7 +108,7 @@ export function emailBookingCancelled({ toEmail, toName, byName, course, date, t
     toName,
     subject: 'A consultation was cancelled',
     message:
-`${byName} cancelled the ${course} consultation on ${date} at ${time}.
+`${byName} cancelled the ${course} consultation on ${date} at ${time} (${DHAKA_TIME_ZONE}, UTC+6).
 Reason: ${reason || 'No reason given'}
 
 Booking ID: ${bookingId}`,
@@ -121,7 +122,7 @@ export function emailAutoCancel({ toEmail, toName, otherName, course, date, time
     toName,
     subject: 'Consultation request cancelled',
     message:
-`Your ${course} request with ${otherName} on ${date} at ${time} was cancelled automatically.
+`Your ${course} request with ${otherName} on ${date} at ${time} (${DHAKA_TIME_ZONE}, UTC+6) was cancelled automatically.
 Reason: The request was not accepted before the session time passed.
 
 Booking ID: ${bookingId}`,

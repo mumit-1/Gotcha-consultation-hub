@@ -4,6 +4,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
+import { DHAKA_TIME_ZONE } from '../lib/dhakaTime'
 
 const AuthContext = createContext(null)
 
@@ -44,7 +45,7 @@ export function AuthProvider({ children }) {
             email:        user.email,
             photoURL:     user.photoURL || null,
             bio:          '',
-            timezone:     Intl.DateTimeFormat().resolvedOptions().timeZone,
+            timezone:     DHAKA_TIME_ZONE,
             status:       'active',
             isConsultant: false,
             blockedUsers: [],

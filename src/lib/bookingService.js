@@ -6,7 +6,7 @@ import { auth, db } from './firebase'
 import {
   emailBookingAccepted, emailBookingCancelled, emailBookingRejected, emailAutoCancel,
 } from './emailjs'
-import { format } from 'date-fns'
+import { formatDhaka } from './dhakaTime'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -29,8 +29,8 @@ function getBlocks(startUtcMs, durationMin) {
 function fmt(ts) {
   const d = ts instanceof Timestamp ? ts.toDate() : new Date(ts)
   return {
-    date: format(d, 'MMM d, yyyy'),
-    time: format(d, 'h:mm a'),
+    date: formatDhaka(d, { dateStyle: 'medium' }),
+    time: formatDhaka(d, { timeStyle: 'short' }),
   }
 }
 
