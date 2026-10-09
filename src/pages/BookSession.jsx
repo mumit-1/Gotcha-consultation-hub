@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { doc, getDoc, Timestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
@@ -112,6 +112,18 @@ export default function BookSession() {
 
   if (loading) return <PageLayout><div className="page-container py-20 text-center font-black uppercase">Loading…</div></PageLayout>
   if (!consultant) return <PageLayout><div className="page-container py-20 text-center font-black uppercase">Consultant not found</div></PageLayout>
+  if (firebaseUser?.uid === consultantId) {
+    return (
+      <PageLayout>
+        <div className="page-container py-20 text-center">
+          <h1 className="font-black text-3xl uppercase mb-4">You can’t book yourself</h1>
+          <Link to={`/consultant/${consultantId}`} className="btn btn-outline">
+            View your consultant profile
+          </Link>
+        </div>
+      </PageLayout>
+    )
+  }
 
   const isFree  = !consultant.price30min || consultant.price30min === 0
   const price   = calcPrice()

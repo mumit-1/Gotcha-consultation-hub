@@ -18,9 +18,10 @@ import { Link } from 'react-router-dom'
 
 const PAGE_SIZE = 12
 
-function ConsultantCard({ c }) {
+function ConsultantCard({ c, currentUid }) {
   const rating = c.ratingCount > 0 ? (c.ratingSum / c.ratingCount).toFixed(1) : null
   const isFree = !c.price30min || c.price30min === 0
+  const isOwnProfile = currentUid === c.uid
 
   return (
     <motion.div
@@ -84,19 +85,21 @@ function ConsultantCard({ c }) {
         >
           View Profile
         </Link>
-        <Link
-          to={`/book/${c.uid}`}
-          className="btn btn-primary btn-sm flex-1 text-center"
-        >
-          Book <ChevronRight className="h-3 w-3" strokeWidth={3} />
-        </Link>
+        {!isOwnProfile && (
+          <Link
+            to={`/book/${c.uid}`}
+            className="btn btn-primary btn-sm flex-1 text-center"
+          >
+            Book <ChevronRight className="h-3 w-3" strokeWidth={3} />
+          </Link>
+        )}
       </div>
     </motion.div>
   )
 }
 
 export default function FindConsultants() {
-  const { isLoggedIn } = useAuth()
+  const { firebaseUser } = useAuth()
   const [filters, setFilters] = useState({
     courses: [], nameSearch: '', sortBy: 'rating', availability: 'all',
   })
@@ -314,7 +317,7 @@ export default function FindConsultants() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {consultants.map((c, i) => (
                 <AnimatedSection key={c.id} delay={i * 0.04} once>
-                  <ConsultantCard c={c} />
+                  <ConsultantCard c={c} currentUid={firebaseUser?.uid} />
                 </AnimatedSection>
               ))}
             </div>

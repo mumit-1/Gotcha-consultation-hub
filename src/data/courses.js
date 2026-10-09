@@ -1,7 +1,7 @@
 /**
  * SINGLE SOURCE OF TRUTH for all course codes.
- * Never rename, remove, or add codes here without updating the Firestore
- * config/courses document (run scripts/seedCourses.js again).
+ * Course selection is sourced from this local catalog; it does not need to be
+ * seeded into Firestore.
  */
 export const COURSES = [
   "ACT201","ACT202","ACT301","ACT422","ACT423","ACT427","ACT429","ACT431","ACT511",

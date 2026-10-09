@@ -98,10 +98,7 @@ function BookingCard({ b, currentUid, onReview }) {
                 {isConsultant && b.status === 'PENDING' && (
                   <>
                     <Button size="sm" variant="primary" loading={acting}
-                      onClick={() => {
-                        const wa = window.prompt('Your WhatsApp number:')
-                        act(acceptBooking, b.id, wa || '')
-                      }}
+                      onClick={() => act(acceptBooking, b.id)}
                     >
                       <CheckCircle className="h-3 w-3" strokeWidth={3} /> Accept
                     </Button>

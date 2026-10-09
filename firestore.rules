@@ -38,13 +38,9 @@ service cloud.firestore {
     }
 
     function validCourses(courses) {
-      let coursesPath = /databases/$(database)/documents/config/courses;
       return courses is list &&
         courses.size() > 0 &&
-        courses.size() <= 50 &&
-        exists(coursesPath) &&
-        get(coursesPath).data.codes is list &&
-        get(coursesPath).data.codes.hasAll(courses);
+        courses.size() <= 50;
     }
 
     function validReview(review) {
@@ -176,6 +172,7 @@ service cloud.firestore {
         ]) &&
         request.resource.data.uid == uid &&
         request.resource.data.email == request.auth.token.email &&
+        request.auth.token.email.matches('^[A-Za-z0-9._%+-]+@g\\.bracu\\.ac\\.bd$') &&
         request.resource.data.status == 'active' &&
         request.resource.data.isConsultant == false;
       allow update: if (isAdmin() &&
@@ -285,6 +282,11 @@ service cloud.firestore {
           request.resource.data.status == 'ACCEPTED' &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['status', 'whatsappNumber', 'updatedAt']) &&
+          request.resource.data.whatsappNumber is string &&
+          request.resource.data.whatsappNumber.size() > 0 &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)/private/contact) &&
+          request.resource.data.whatsappNumber ==
+            get(/databases/$(database)/documents/users/$(request.auth.uid)/private/contact).data.whatsapp &&
           request.resource.data.updatedAt == request.time) ||
         (signedIn() && activeUser() &&
           resource.data.consultantId == request.auth.uid &&

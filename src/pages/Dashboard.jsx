@@ -133,11 +133,6 @@ export default function Dashboard() {
   const upcomingBookings = bookings.filter(b => b.startUtc && !isToday(b.startUtc.toDate()) && b.startUtc.toMillis() > now && ['PENDING','ACCEPTED'].includes(b.status))
   const pendingRequests  = bookings.filter(b => b.status === 'PENDING' && b.consultantId === firebaseUser?.uid)
 
-  const handleAccept = (id) => {
-    const waPrompt = window.prompt('Your WhatsApp number (will be shared with client):')
-    return acceptBooking(id, waPrompt || '')
-  }
-
   return (
     <PageLayout>
       <EmailVerificationBanner />
@@ -183,7 +178,7 @@ export default function Dashboard() {
                       key={b.id}
                       booking={b}
                       currentUid={firebaseUser.uid}
-                      onAccept={handleAccept}
+                      onAccept={acceptBooking}
                       onReject={rejectBooking}
                       onCancel={cancelBooking}
                     />
@@ -211,7 +206,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-3">
                   {todayBookings.map(b => (
-                    <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={handleAccept} onReject={rejectBooking} onCancel={cancelBooking} />
+                    <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={acceptBooking} onReject={rejectBooking} onCancel={cancelBooking} />
                   ))}
                 </div>
               )}
@@ -229,7 +224,7 @@ export default function Dashboard() {
               </div>
               <div className="p-4 space-y-3">
                 {upcomingBookings.slice(0, 5).map(b => (
-                  <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={handleAccept} onReject={rejectBooking} onCancel={cancelBooking} />
+                  <BookingRow key={b.id} booking={b} currentUid={firebaseUser.uid} onAccept={acceptBooking} onReject={rejectBooking} onCancel={cancelBooking} />
                 ))}
               </div>
             </div>

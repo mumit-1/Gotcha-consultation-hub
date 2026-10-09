@@ -192,18 +192,9 @@ npx firebase deploy --only firestore:rules,firestore:indexes
 
 The Firestore rules restrict booking changes to valid participant transitions, keep contact records owner-only, and only allow a completed booking to be reviewed once by each participant. Admin access is granted by creating an `admins/{uid}` document outside the client app.
 
-### 4. Seed the Course List
+### 4. Course List
 
-The security rules validate course codes against `config/courses` in Firestore. Seed it once:
-
-**Option A — Firebase Console (easiest):**
-Firestore → `config` collection → Document ID: `courses` → Field: `codes` (Array) → paste all codes from [`src/data/courses.js`](src/data/courses.js)
-
-**Option B — Script (requires service account):**
-```bash
-export FIREBASE_SERVICE_ACCOUNT=$(cat your-service-account.json)
-node scripts/seedCourses.js
-```
+The 549 course codes are loaded from [`src/data/courses.js`](src/data/courses.js) by the app. You do not need to create a Firestore course document or enter codes individually.
 
 ### 5. Create the First Admin
 
@@ -255,7 +246,7 @@ Gotcha has **no server**. All security is enforced in Firestore rules:
 |---|---|
 | `email_verified` | Unverified users cannot create bookings or consultant profiles |
 | `notSuspended()` | Suspended/banned users are blocked from all writes |
-| `array-contains` check | Courses must be in the approved `config/courses` list |
+| Local course catalog | Consultant course choices come from `src/data/courses.js`; no Firestore seed required |
 | Slot lock `create-if-absent` | Prevents double-acceptance of overlapping bookings |
 | Booking participant check | Only the two participants can read/update a booking |
 | Admin collection | `admins/{uid}` existence check; write is `false` (console only) |
@@ -291,9 +282,7 @@ notifications/{uid}/items/{id}  In-app notifications
 reviews/{bookingId}             Post-session ratings
 reports/{reportId}              User reports queue
 admins/{uid}                    Admin access list (console-only writes)
-config/courses                  Approved course codes array
 config/settings                 Platform settings
-payments/{id}                   Record-only payment log
 ```
 
 ---

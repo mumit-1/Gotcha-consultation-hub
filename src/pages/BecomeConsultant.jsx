@@ -56,9 +56,18 @@ export default function BecomeConsultant() {
   const handleSave = async (e) => {
     e.preventDefault()
     if (!isVerified) { toast.error('Please verify your email first'); return }
+    if (!userDoc || userDoc.status !== 'active') {
+      toast.error('Your active account profile is still loading. Please try again in a moment.')
+      return
+    }
+    if (!form.whatsapp.trim()) {
+      toast.error('WhatsApp number is required')
+      return
+    }
     if (form.courses.length === 0) { toast.error('Select at least one course'); return }
 
     setLoading(true)
+    let saveStep = 'consultant profile'
     try {
       const consultantData = {
         uid: firebaseUser.uid,
@@ -82,13 +91,13 @@ export default function BecomeConsultant() {
       await setDoc(doc(db, 'consultants', firebaseUser.uid), consultantData, { merge: true })
 
       // Save WhatsApp to private subcollection
-      if (form.whatsapp.trim()) {
-        await setDoc(doc(db, 'users', firebaseUser.uid, 'private', 'contact'), {
-          whatsapp: form.whatsapp.trim(),
-        })
-      }
+      saveStep = 'private contact details'
+      await setDoc(doc(db, 'users', firebaseUser.uid, 'private', 'contact'), {
+        whatsapp: form.whatsapp.trim(),
+      })
 
       // Mark user as consultant
+      saveStep = 'account profile'
       await updateDoc(doc(db, 'users', firebaseUser.uid), {
         isConsultant: true,
         updatedAt: serverTimestamp(),
@@ -97,7 +106,7 @@ export default function BecomeConsultant() {
       toast.success(existing ? 'Consultant profile updated!' : 'You are now a consultant! 🎉')
       setExisting(consultantData)
     } catch (err) {
-      toast.error('Failed: ' + err.message)
+      toast.error(`Could not save ${saveStep}: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -221,8 +230,10 @@ export default function BecomeConsultant() {
                 WhatsApp Number <span className="badge-muted badge ml-2">Private</span>
               </h2>
               <Input
-                label="WhatsApp (with country code)"
+                label="WhatsApp (with country code) *"
                 placeholder="+8801XXXXXXXXX"
+                type="tel"
+                required
                 value={form.whatsapp}
                 onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
               />

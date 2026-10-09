@@ -9,6 +9,8 @@ import Button from '../../components/ui/Button'
 import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+const UNIVERSITY_EMAIL_REGEX = /^[A-Z0-9._%+-]+@g\.bracu\.ac\.bd$/i
+
 export default function Register() {
   const [form, setForm]       = useState({ name: '', email: '', password: '', confirm: '' })
   const [errors, setErrors]   = useState({})
@@ -19,7 +21,9 @@ export default function Register() {
   const validate = () => {
     const e = {}
     if (!form.name.trim())                         e.name     = 'Name is required'
-    if (!form.email.includes('@'))                 e.email    = 'Enter a valid email'
+    if (!UNIVERSITY_EMAIL_REGEX.test(form.email.trim())) {
+      e.email = 'Use your university email ending in @g.bracu.ac.bd'
+    }
     if (form.password.length < 8)                 e.password = 'At least 8 characters'
     if (form.password !== form.confirm)            e.confirm  = 'Passwords do not match'
     return e
@@ -78,7 +82,7 @@ export default function Register() {
               <Input
                 label="Email Address"
                 type="email"
-                placeholder="you@university.edu"
+                placeholder="you@g.bracu.ac.bd"
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 error={errors.email}

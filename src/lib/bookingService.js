@@ -2,7 +2,7 @@ import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   writeBatch, runTransaction, query, where, serverTimestamp, Timestamp,
 } from 'firebase/firestore'
-import { db } from './firebase'
+import { auth, db } from './firebase'
 import {
   emailBookingAccepted, emailBookingCancelled, emailBookingRejected, emailAutoCancel,
 } from './emailjs'
@@ -69,14 +69,28 @@ export async function createBooking({
 
 // ─── acceptBooking ─────────────────────────────────────────────────────────
 
-export async function acceptBooking(bookingId, consultantWhatsapp) {
+export async function acceptBooking(bookingId) {
+  const consultantId = auth.currentUser?.uid
+  if (!consultantId) throw new Error('You must be signed in to accept a request')
+
   const bookingRef = doc(db, 'bookings', bookingId)
+  const contactRef = doc(db, 'users', consultantId, 'private', 'contact')
 
   await runTransaction(db, async (tx) => {
-    const snap = await tx.get(bookingRef)
+    const [snap, contactSnap] = await Promise.all([
+      tx.get(bookingRef),
+      tx.get(contactRef),
+    ])
     if (!snap.exists()) throw new Error('Booking not found')
     const b = snap.data()
     if (b.status !== 'PENDING') throw new Error('Booking is no longer pending')
+    if (consultantId !== b.consultantId) {
+      throw new Error('Only the assigned consultant can accept this request')
+    }
+    const consultantWhatsapp = contactSnap.data()?.whatsapp?.trim()
+    if (!contactSnap.exists() || !consultantWhatsapp) {
+      throw new Error('Add your WhatsApp number in your consultant profile before accepting requests')
+    }
 
     const startMs   = b.startUtc.toMillis()
     const blocks    = getBlocks(startMs, b.durationMin)
@@ -115,7 +129,7 @@ export async function acceptBooking(bookingId, consultantWhatsapp) {
     // Accept the booking, write WhatsApp number
     tx.update(bookingRef, {
       status: 'ACCEPTED',
-      whatsappNumber: consultantWhatsapp || null,
+      whatsappNumber: consultantWhatsapp,
       updatedAt: serverTimestamp(),
     })
   })
