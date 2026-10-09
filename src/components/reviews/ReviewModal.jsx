@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  doc, setDoc, updateDoc, runTransaction, serverTimestamp, getDoc,
+  doc, runTransaction, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
-import { useAuth } from '../../contexts/AuthContext'
 import Modal from '../ui/Modal'
 import Button from '../ui/Button'
 import Textarea from '../ui/Textarea'
@@ -13,7 +12,6 @@ import toast from 'react-hot-toast'
 
 export default function ReviewModal({ booking, currentUid, onClose }) {
   const isConsultant  = booking.consultantId === currentUid
-  const targetId      = isConsultant ? booking.clientId : booking.consultantId
   const reviewField   = isConsultant ? 'consultantReview' : 'clientReview'
 
   const [stars, setStars] = useState(0)
@@ -27,44 +25,65 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
 
     setLoading(true)
     try {
-      // Update the review doc (create if needed)
+      const bookingRef = doc(db, 'bookings', booking.id)
       const reviewRef = doc(db, 'reviews', booking.id)
-      // Try to update; if the doc doesn't exist yet, create it
-      try {
-        await updateDoc(reviewRef, {
-          [reviewField]: { stars, review: text.trim(), createdAt: serverTimestamp() },
-          consultantId: booking.consultantId,
-          clientId: booking.clientId,
-        })
-      } catch (err) {
-        if (err.code === 'not-found') {
-          await setDoc(reviewRef, {
-            consultantId: booking.consultantId,
-            clientId: booking.clientId,
-            [reviewField]: { stars, review: text.trim(), createdAt: serverTimestamp() },
-          })
-        } else throw err
-      }
+      const consultantRef = doc(db, 'consultants', booking.consultantId)
+      const review = { stars, review: text.trim(), createdAt: serverTimestamp() }
 
-      // Update ratingSum/ratingCount on consultant in a transaction (only for client reviews)
-      if (!isConsultant) {
-        const consultantRef = doc(db, 'consultants', booking.consultantId)
-        await runTransaction(db, async (tx) => {
-          const snap = await tx.get(consultantRef)
-          if (!snap.exists()) return
-          const d = snap.data()
+      await runTransaction(db, async (tx) => {
+        const [bookingSnap, reviewSnap] = await Promise.all([
+          tx.get(bookingRef),
+          tx.get(reviewRef),
+        ])
+        const consultantSnap = isConsultant ? null : await tx.get(consultantRef)
+
+        if (!bookingSnap.exists() || bookingSnap.data().status !== 'COMPLETED') {
+          throw new Error('Only completed sessions can be reviewed')
+        }
+        const bookingData = bookingSnap.data()
+        if (
+          bookingData.clientId !== booking.clientId ||
+          bookingData.consultantId !== booking.consultantId
+        ) {
+          throw new Error('Booking participants do not match')
+        }
+        if (!isConsultant && !consultantSnap.exists()) {
+          throw new Error('Consultant profile not found')
+        }
+
+        const reviewData = reviewSnap.exists() ? reviewSnap.data() : {}
+        if (reviewData[reviewField]) {
+          throw new Error('You have already reviewed this session')
+        }
+
+        if (reviewSnap.exists()) {
+          tx.update(reviewRef, {
+            [reviewField]: review,
+            ...(!isConsultant && { ratingCounted: true }),
+          })
+        } else {
+          tx.set(reviewRef, {
+            consultantId: bookingData.consultantId,
+            clientId: bookingData.clientId,
+            [reviewField]: review,
+            ...(!isConsultant && { ratingCounted: true }),
+          })
+        }
+
+        tx.update(bookingRef, {
+          [reviewField]: review,
+          updatedAt: serverTimestamp(),
+        })
+
+        if (!isConsultant) {
+          const consultantData = consultantSnap.data()
           tx.update(consultantRef, {
-            ratingSum:   (d.ratingSum   || 0) + stars,
-            ratingCount: (d.ratingCount || 0) + 1,
+            ratingSum: (consultantData.ratingSum || 0) + stars,
+            ratingCount: (consultantData.ratingCount || 0) + 1,
+            lastRatedReviewId: booking.id,
             updatedAt: serverTimestamp(),
           })
-        })
-      }
-
-      // Store review on booking doc too (for easy read)
-      await updateDoc(doc(db, 'bookings', booking.id), {
-        [reviewField]: { stars, review: text.trim(), createdAt: serverTimestamp() },
-        updatedAt: serverTimestamp(),
+        }
       })
 
       toast.success('Review submitted! Thank you.')

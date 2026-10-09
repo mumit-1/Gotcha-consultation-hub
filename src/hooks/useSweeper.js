@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react'
 import {
-  collection, query, where, getDocs, updateDoc, doc,
-  serverTimestamp, addDoc, Timestamp,
+  collection, query, where, getDocs, getDoc, updateDoc, doc,
+  runTransaction, serverTimestamp, addDoc, Timestamp,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
-import { emailAutoCancel } from '../lib/emailjs'
+import { emailBookingCancelled } from '../lib/emailjs'
 import { format } from 'date-fns'
 
 const INTERVAL_MS  = 3 * 60 * 1000 // run every 3 minutes while app is open
@@ -42,6 +42,83 @@ export function useSweeper() {
             type: 'cancelled',
             message: `A pending ${b.course} request expired automatically.`,
             bookingId: d.id, read: false, createdAt: serverTimestamp(),
+          })
+        }
+      }
+
+      // Cancel this client's other pending requests after an overlapping session is accepted.
+      const acceptedClientQ = query(
+        collection(db, 'bookings'),
+        where('clientId', '==', uid),
+        where('status', '==', 'ACCEPTED'),
+      )
+      const [acceptedClientSnaps, remainingPendingSnaps] = await Promise.all([
+        getDocs(acceptedClientQ),
+        getDocs(query(
+          collection(db, 'bookings'),
+          where('clientId', '==', uid),
+          where('status', '==', 'PENDING'),
+        )),
+      ])
+      for (const acceptedDoc of acceptedClientSnaps.docs) {
+        const accepted = acceptedDoc.data()
+        const acceptedStart = accepted.startUtc.toMillis()
+        const acceptedEnd = accepted.endUtc.toMillis()
+
+        for (const pendingDoc of remainingPendingSnaps.docs) {
+          if (pendingDoc.id === acceptedDoc.id) continue
+          const pendingRef = doc(db, 'bookings', pendingDoc.id)
+          const acceptedRef = doc(db, 'bookings', acceptedDoc.id)
+          const cancelledBooking = await runTransaction(db, async (tx) => {
+            const [acceptedSnap, pendingSnap] = await Promise.all([
+              tx.get(acceptedRef),
+              tx.get(pendingRef),
+            ])
+            if (
+              !acceptedSnap.exists() ||
+              acceptedSnap.data().status !== 'ACCEPTED' ||
+              !pendingSnap.exists() ||
+              pendingSnap.data().status !== 'PENDING' ||
+              pendingSnap.data().clientId !== uid
+            ) return null
+
+            const pending = pendingSnap.data()
+            if (
+              pending.startUtc.toMillis() >= acceptedEnd ||
+              pending.endUtc.toMillis() <= acceptedStart
+            ) return null
+
+            tx.update(pendingRef, {
+              status: 'CANCELLED',
+              cancelledBy: uid,
+              cancelReason: 'User booked elsewhere',
+              cancelledAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+            return pending
+          })
+
+          if (!cancelledBooking) continue
+
+          await addDoc(collection(db, 'notifications', cancelledBooking.consultantId, 'items'), {
+            type: 'cancelled',
+            message: `${userDoc?.name || 'The client'} booked elsewhere — their ${cancelledBooking.course} request was auto-cancelled.`,
+            bookingId: pendingDoc.id,
+            read: false,
+            createdAt: serverTimestamp(),
+          })
+
+          const consultantSnap = await getDoc(doc(db, 'users', cancelledBooking.consultantId))
+          const start = cancelledBooking.startUtc.toDate()
+          await emailBookingCancelled({
+            toEmail: consultantSnap.data()?.email,
+            toName: consultantSnap.data()?.name,
+            byName: userDoc?.name || 'The client',
+            course: cancelledBooking.course,
+            date: format(start, 'MMM d, yyyy'),
+            time: format(start, 'h:mm a'),
+            reason: 'Another booking was accepted for this time.',
+            bookingId: pendingDoc.id,
           })
         }
       }
@@ -99,7 +176,7 @@ export function useSweeper() {
       // Sweeper is best-effort; never crash the app
       console.warn('[Sweeper] error:', err.message)
     }
-  }, [firebaseUser])
+  }, [firebaseUser, userDoc])
 
   useEffect(() => {
     if (!firebaseUser) return

@@ -42,7 +42,7 @@ Gotcha is a free consultation marketplace built for university students. Any ver
 | 🔍 **Find Consultants** | Filter by course, name, availability, price; sort by rating; paginated; fast composite indexes |
 | 📩 **Booking Flow** | PENDING → ACCEPTED → IN_PROGRESS → COMPLETED state machine with slot-lock double-booking protection |
 | 🔒 **Slot Locks** | Firestore transaction locks every 30-min block; two overlapping accepts can never both succeed |
-| 🤖 **Lazy Sweeper** | Browser-side background process auto-cancels expired requests and persists time-derived statuses |
+| 🤖 **Lazy Sweeper** | Browser-side background process auto-cancels expired/overlapping requests and persists time-derived statuses |
 | 📧 **Emails** | EmailJS for 6 email types (request, accepted with WhatsApp link, rejected, cancelled, auto-cancelled, completed) |
 | 🏠 **Dashboard** | TODAY timeline, pending requests panel, upcoming sessions, quick navigation |
 | 🔔 **Notifications** | Real-time in-app notification center with mark-as-read |
@@ -189,6 +189,8 @@ In [Firebase Console](https://console.firebase.google.com):
 npx firebase login
 npx firebase deploy --only firestore:rules,firestore:indexes
 ```
+
+The Firestore rules restrict booking changes to valid participant transitions, keep contact records owner-only, and only allow a completed booking to be reviewed once by each participant. Admin access is granted by creating an `admins/{uid}` document outside the client app.
 
 ### 4. Seed the Course List
 

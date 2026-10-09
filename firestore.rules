@@ -1,9 +1,478 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function activeUser() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function validCancellation() {
+      return signedIn() &&
+        request.auth.uid in [resource.data.clientId, resource.data.consultantId] &&
+        resource.data.status in ['PENDING', 'ACCEPTED'] &&
+        request.resource.data.status == 'CANCELLED' &&
+        request.resource.data.cancelledBy == request.auth.uid &&
+        (request.resource.data.cancelReason is string ||
+         request.resource.data.cancelReason == null) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'cancelledBy', 'cancelReason', 'cancelledAt', 'updatedAt']) &&
+        request.resource.data.cancelledAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+    }
+
+    function validCourses(courses) {
+      let coursesPath = /databases/$(database)/documents/config/courses;
+      return courses is list &&
+        courses.size() > 0 &&
+        courses.size() <= 50 &&
+        exists(coursesPath) &&
+        get(coursesPath).data.codes is list &&
+        get(coursesPath).data.codes.hasAll(courses);
+    }
+
+    function validReview(review) {
+      return review is map &&
+        review.keys().hasOnly(['stars', 'review', 'createdAt']) &&
+        review.keys().hasAll(['stars', 'review', 'createdAt']) &&
+        review.stars is int &&
+        review.stars >= 1 &&
+        review.stars <= 5 &&
+        review.review is string &&
+        review.review.size() <= 2000 &&
+        review.createdAt == request.time;
+    }
+
+    function validNotificationRecipient(uid, booking) {
+      return (request.resource.data.type == 'new_request' &&
+          booking.status == 'PENDING' &&
+          request.auth.uid == booking.clientId && uid == booking.consultantId) ||
+        ((request.resource.data.type == 'accepted' &&
+          booking.status == 'ACCEPTED' ||
+          request.resource.data.type == 'rejected' &&
+          booking.status == 'REJECTED') &&
+          request.auth.uid == booking.consultantId && uid == booking.clientId) ||
+        (request.resource.data.type == 'cancelled' &&
+          booking.status == 'CANCELLED' &&
+          request.auth.uid in [booking.clientId, booking.consultantId] &&
+          uid in [booking.clientId, booking.consultantId] &&
+          uid != request.auth.uid) ||
+        (request.resource.data.type in ['completed', 'review'] &&
+          booking.status == 'COMPLETED' &&
+          request.auth.uid in [booking.clientId, booking.consultantId] &&
+          uid in [booking.clientId, booking.consultantId] &&
+          uid != request.auth.uid);
+    }
+
+    function ratingUpdateMatchesReview(reviewId, consultantId, stars) {
+      let consultantPath = /databases/$(database)/documents/consultants/$(consultantId);
+      return exists(consultantPath) &&
+        existsAfter(consultantPath) &&
+        getAfter(consultantPath).data.lastRatedReviewId == reviewId &&
+        getAfter(consultantPath).data.ratingCount ==
+          get(consultantPath).data.get('ratingCount', 0) + 1 &&
+        getAfter(consultantPath).data.ratingSum ==
+          get(consultantPath).data.get('ratingSum', 0) + stars;
+    }
+
+    function validRatingIncrement(consultantId) {
+      let reviewId = request.resource.data.lastRatedReviewId;
+      let reviewPath = /databases/$(database)/documents/reviews/$(reviewId);
+      return verified() && activeUser() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['ratingSum', 'ratingCount', 'lastRatedReviewId', 'updatedAt']) &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.ratingCount == resource.data.get('ratingCount', 0) + 1 &&
+        request.resource.data.ratingSum - resource.data.get('ratingSum', 0) >= 1 &&
+        request.resource.data.ratingSum - resource.data.get('ratingSum', 0) <= 5 &&
+        request.resource.data.lastRatedReviewId is string &&
+        (!exists(reviewPath) || !get(reviewPath).data.keys().hasAny(['ratingCounted'])) &&
+        existsAfter(reviewPath) &&
+        getAfter(reviewPath).data.consultantId == consultantId &&
+        getAfter(reviewPath).data.clientId == request.auth.uid &&
+        getAfter(reviewPath).data.ratingCounted == true &&
+        getAfter(reviewPath).data.clientReview.stars ==
+          request.resource.data.ratingSum - resource.data.get('ratingSum', 0);
+    }
+
+    function validClientReviewWrite(reviewId, review) {
+      let bookingPath = /databases/$(database)/documents/bookings/$(reviewId);
+      return verified() && activeUser() &&
+        exists(bookingPath) &&
+        get(bookingPath).data.status == 'COMPLETED' &&
+        get(bookingPath).data.clientId == request.auth.uid &&
+        get(bookingPath).data.consultantId == review.consultantId &&
+        get(bookingPath).data.clientId == review.clientId &&
+        validReview(review.clientReview) &&
+        review.ratingCounted == true &&
+        ratingUpdateMatchesReview(reviewId, review.consultantId, review.clientReview.stars);
+    }
+
+    function validConsultantReviewWrite(reviewId, review) {
+      let bookingPath = /databases/$(database)/documents/bookings/$(reviewId);
+      return verified() && activeUser() &&
+        exists(bookingPath) &&
+        get(bookingPath).data.status == 'COMPLETED' &&
+        get(bookingPath).data.consultantId == request.auth.uid &&
+        get(bookingPath).data.consultantId == review.consultantId &&
+        get(bookingPath).data.clientId == review.clientId &&
+        validReview(review.consultantReview);
+    }
+
+    function validBookingReviewUpdate(reviewId, reviewerField) {
+      let reviewPath = /databases/$(database)/documents/reviews/$(reviewId);
+      let isClientReview = reviewerField == 'clientReview';
+      let reviewerId = isClientReview ? resource.data.clientId : resource.data.consultantId;
+      return verified() &&
+        resource.data.status == 'COMPLETED' &&
+        request.auth.uid == reviewerId &&
+        (!resource.data.keys().hasAny([reviewerField]) ||
+          resource.data.get(reviewerField, null) == null) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([reviewerField, 'updatedAt']) &&
+        request.resource.data.get(reviewerField, null) is map &&
+        request.resource.data.updatedAt == request.time &&
+        existsAfter(reviewPath) &&
+        getAfter(reviewPath).data.get(reviewerField, null) ==
+          request.resource.data.get(reviewerField, null);
+    }
+
+    match /admins/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list, create, update, delete: if false;
+    }
+
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create: if isOwner(uid) &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'name', 'email', 'photoURL', 'bio', 'timezone',
+          'status', 'isConsultant', 'blockedUsers', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'uid', 'name', 'email', 'status', 'isConsultant', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.isConsultant == false;
+      allow update: if (isAdmin() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'updatedAt']) &&
+          request.resource.data.status in ['active', 'suspended', 'banned']) ||
+        (isOwner(uid) && activeUser() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'bio', 'timezone', 'photoURL', 'isConsultant', 'blockedUsers', 'updatedAt']) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isConsultant']) ||
+            (request.resource.data.isConsultant == true &&
+             exists(/databases/$(database)/documents/consultants/$(uid)))));
+      allow delete: if isAdmin();
+
+      match /private/{doc} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    match /consultants/{id} {
+      allow read: if true;
+      allow create: if isOwner(id) && verified() && activeUser() &&
+        request.resource.data.uid == id &&
+        validCourses(request.resource.data.courses) &&
+        request.resource.data.price30min is number &&
+        request.resource.data.price30min >= 0 &&
+        request.resource.data.priceExtra30min is number &&
+        request.resource.data.priceExtra30min >= 0 &&
+        request.resource.data.courses is list &&
+        request.resource.data.ratingSum == 0 &&
+        request.resource.data.ratingCount == 0 &&
+        request.resource.data.completedCount == 0 &&
+        request.resource.data.isVerified == false &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'name', 'photoURL', 'bio', 'skills', 'experience', 'courses',
+          'price30min', 'priceExtra30min', 'ratingSum', 'ratingCount',
+          'completedCount', 'isVerified', 'manualBusy', 'availability',
+          'createdAt', 'updatedAt'
+        ]);
+      allow update: if isAdmin() ||
+        (isOwner(id) && verified() && activeUser() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'name', 'photoURL', 'bio', 'skills', 'experience', 'courses',
+              'price30min', 'priceExtra30min', 'manualBusy', 'availability',
+              'updatedAt'
+            ]) &&
+          validCourses(request.resource.data.courses) &&
+          request.resource.data.price30min is number &&
+          request.resource.data.price30min >= 0 &&
+          request.resource.data.priceExtra30min is number &&
+          request.resource.data.priceExtra30min >= 0 &&
+          request.resource.data.updatedAt == request.time) ||
+        validRatingIncrement(id);
+      allow delete: if isAdmin();
+
+      match /private/{doc} {
+        allow read, write: if isOwner(id) || isAdmin();
+      }
+    }
+
+    match /bookings/{id} {
+      allow read: if signedIn() &&
+        (resource.data.clientId == request.auth.uid ||
+         resource.data.consultantId == request.auth.uid || isAdmin());
+      allow create: if verified() && activeUser() &&
+        request.resource.data.clientId is string &&
+        request.resource.data.clientId == request.auth.uid &&
+        request.resource.data.consultantId is string &&
+        request.resource.data.clientId != request.resource.data.consultantId &&
+        request.resource.data.status == 'PENDING' &&
+        request.resource.data.startUtc is timestamp &&
+        request.resource.data.startUtc > request.time &&
+        request.resource.data.endUtc is timestamp &&
+        request.resource.data.durationMin is int &&
+        request.resource.data.durationMin >= 30 &&
+        request.resource.data.durationMin <= 180 &&
+        request.resource.data.durationMin % 30 == 0 &&
+        request.resource.data.endUtc ==
+          request.resource.data.startUtc +
+          duration.value(request.resource.data.durationMin, 'm') &&
+        exists(/databases/$(database)/documents/consultants/$(request.resource.data.consultantId)) &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.consultantId)) &&
+        get(/databases/$(database)/documents/users/$(request.resource.data.consultantId)).data.status == 'active' &&
+        request.resource.data.course is string &&
+        request.resource.data.course in
+          get(/databases/$(database)/documents/consultants/$(request.resource.data.consultantId)).data.courses &&
+        request.resource.data.price is number &&
+        request.resource.data.price >= 0 &&
+        request.resource.data.topic is string &&
+        request.resource.data.topic.size() > 0 &&
+        request.resource.data.topic.size() <= 1000 &&
+        request.resource.data.keys().hasOnly([
+          'consultantId', 'clientId', 'course', 'topic', 'startUtc', 'endUtc',
+          'durationMin', 'price', 'status', 'whatsappNumber', 'cancelledBy',
+          'cancelReason', 'cancelledAt', 'clientRating', 'consultantRating',
+          'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin() ||
+        (signedIn() && activeUser() &&
+          resource.data.consultantId == request.auth.uid &&
+          resource.data.status == 'PENDING' &&
+          request.resource.data.status == 'ACCEPTED' &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'whatsappNumber', 'updatedAt']) &&
+          request.resource.data.updatedAt == request.time) ||
+        (signedIn() && activeUser() &&
+          resource.data.consultantId == request.auth.uid &&
+          resource.data.status == 'PENDING' &&
+          request.resource.data.status == 'REJECTED' &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'updatedAt']) &&
+          request.resource.data.updatedAt == request.time) ||
+        (signedIn() && activeUser() &&
+          resource.data.consultantId == request.auth.uid &&
+          resource.data.status == 'ACCEPTED' &&
+          request.resource.data.status in ['IN_PROGRESS', 'COMPLETED'] &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'updatedAt']) &&
+          request.resource.data.updatedAt == request.time) ||
+        (signedIn() && activeUser() &&
+          request.auth.uid in [resource.data.clientId, resource.data.consultantId] &&
+          resource.data.status in ['ACCEPTED', 'IN_PROGRESS'] &&
+          request.resource.data.status == 'COMPLETED' &&
+          request.time > resource.data.endUtc &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'updatedAt']) &&
+          request.resource.data.updatedAt == request.time) ||
+        validBookingReviewUpdate(id, 'clientReview') ||
+        validBookingReviewUpdate(id, 'consultantReview') ||
+        validCancellation();
+      allow delete: if isAdmin();
+    }
+
+    match /slotLocks/{id} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if verified() && activeUser() &&
+        request.resource.data.keys().hasOnly([
+          'consultantId', 'bookingId', 'startUtc', 'endUtc', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'consultantId', 'bookingId', 'startUtc', 'endUtc', 'createdAt'
+        ]) &&
+        request.resource.data.consultantId == request.auth.uid &&
+        request.resource.data.bookingId is string &&
+        request.resource.data.startUtc is timestamp &&
+        request.resource.data.endUtc is timestamp &&
+        request.resource.data.endUtc ==
+          request.resource.data.startUtc + duration.value(30, 'm') &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)) &&
+        getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.consultantId == request.auth.uid &&
+        request.resource.data.startUtc >=
+          getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.startUtc &&
+        request.resource.data.endUtc <=
+          getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.endUtc &&
+        getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'ACCEPTED';
+      allow update: if false;
+      allow delete: if signedIn() &&
+        exists(/databases/$(database)/documents/bookings/$(resource.data.bookingId)) &&
+        get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.status == 'CANCELLED' &&
+        request.auth.uid in [
+          get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.clientId,
+          get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.consultantId
+        ];
+    }
+
+    match /userLocks/{id} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if verified() &&
+        request.resource.data.keys().hasOnly([
+          'clientId', 'bookingId', 'startUtc', 'endUtc', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'clientId', 'bookingId', 'startUtc', 'endUtc', 'createdAt'
+        ]) &&
+        request.resource.data.clientId is string &&
+        request.resource.data.bookingId is string &&
+        request.resource.data.startUtc is timestamp &&
+        request.resource.data.endUtc is timestamp &&
+        request.resource.data.endUtc ==
+          request.resource.data.startUtc + duration.value(30, 'm') &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)) &&
+        getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.consultantId == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.clientId == request.resource.data.clientId &&
+        request.resource.data.startUtc >=
+          getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.startUtc &&
+        request.resource.data.endUtc <=
+          getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.endUtc &&
+        getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'ACCEPTED';
+      allow update: if false;
+      allow delete: if signedIn() &&
+        exists(/databases/$(database)/documents/bookings/$(resource.data.bookingId)) &&
+        get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.status == 'CANCELLED' &&
+        request.auth.uid in [
+          get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.clientId,
+          get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.consultantId
+        ];
+    }
+
+    match /reviews/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly([
+          'consultantId', 'clientId', 'clientReview', 'consultantReview', 'ratingCounted'
+        ]) &&
+        request.resource.data.keys().hasAll(['consultantId', 'clientId']) &&
+        ((request.resource.data.keys().hasAll(['clientReview', 'ratingCounted']) &&
+          request.resource.data.keys().hasOnly([
+            'consultantId', 'clientId', 'clientReview', 'ratingCounted'
+          ]) &&
+          validClientReviewWrite(id, request.resource.data)) ||
+        (request.resource.data.keys().hasAll(['consultantReview']) &&
+          request.resource.data.keys().hasOnly([
+            'consultantId', 'clientId', 'consultantReview'
+          ]) &&
+          validConsultantReviewWrite(id, request.resource.data)));
+      allow update: if request.resource.data.consultantId == resource.data.consultantId &&
+        request.resource.data.clientId == resource.data.clientId &&
+        ((request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['clientReview', 'ratingCounted']) &&
+          !resource.data.keys().hasAny(['clientReview', 'ratingCounted']) &&
+          request.resource.data.keys().hasAll(['clientReview', 'ratingCounted']) &&
+          validClientReviewWrite(id, request.resource.data)) ||
+         (request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['consultantReview']) &&
+          !resource.data.keys().hasAny(['consultantReview']) &&
+          validConsultantReviewWrite(id, request.resource.data)));
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{uid}/items/{id} {
+      allow read: if isOwner(uid);
+      allow create: if verified() &&
+        uid != request.auth.uid &&
+        request.resource.data.keys().hasOnly([
+          'type', 'message', 'bookingId', 'read', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'type', 'message', 'bookingId', 'read', 'createdAt'
+        ]) &&
+        request.resource.data.type in [
+          'new_request', 'accepted', 'rejected', 'cancelled', 'completed', 'review'
+        ] &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() <= 500 &&
+        request.resource.data.read == false &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)) &&
+        validNotificationRecipient(
+            uid,
+            getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data
+          );
+      allow update: if isOwner(uid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+        request.resource.data.read is bool;
+      allow delete: if false;
+    }
+
+    match /reports/{id} {
+      allow create: if verified() && activeUser() &&
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.type is string &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 3000 &&
+        request.resource.data.targetId is string &&
+        request.resource.data.targetId.size() > 0 &&
+        request.resource.data.type in [
+          'Spam', 'Harassment', 'Fraud', 'Inappropriate behavior',
+          'Fake consultant', 'Other'
+        ] &&
+        request.resource.data.keys().hasOnly([
+          'reporterId', 'targetId', 'type', 'description', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'reporterId', 'targetId', 'type', 'description', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.createdAt == request.time;
+      allow read: if isAdmin();
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt']) &&
+        request.resource.data.status in ['resolved', 'dismissed'] &&
+        request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{id} {
+      allow read, write: if isAdmin();
     }
   }
 }

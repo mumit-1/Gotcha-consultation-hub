@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   collection, query, where, onSnapshot, orderBy, limit,
-  updateDoc, doc, serverTimestamp, getDocs,
+  updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,7 +11,7 @@ import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import { StatusBadge } from '../components/ui/Badge'
 import Button from '../components/ui/Button'
-import AnimatedSection from '../components/ui/AnimatedSection'
+// import AnimatedSection from '../components/ui/AnimatedSection'
 import { acceptBooking, rejectBooking, cancelBooking } from '../lib/bookingService'
 import ReviewModal from '../components/reviews/ReviewModal'
 import { format } from 'date-fns'
@@ -24,7 +24,7 @@ function BookingCard({ b, currentUid, onReview }) {
   const isConsultant = b.consultantId === currentUid
   const start = b.startUtc?.toDate?.() ?? new Date(b.startUtc)
   const canReview = b.status === 'COMPLETED' && (
-    isConsultant ? !b.consultantRating : !b.clientRating
+    isConsultant ? !b.consultantReview : !b.clientReview
   )
 
   const act = async (fn, ...args) => {
@@ -127,7 +127,7 @@ function BookingCard({ b, currentUid, onReview }) {
                     Leave Review ★
                   </Button>
                 )}
-                {b.status === 'ACCEPTED' && (
+                {isConsultant && b.status === 'ACCEPTED' && (
                   <Button size="sm" variant="outline"
                     onClick={() => {
                       const nowMs = Date.now()

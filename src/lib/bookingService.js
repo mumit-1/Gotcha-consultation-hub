@@ -80,32 +80,37 @@ export async function acceptBooking(bookingId, consultantWhatsapp) {
 
     const startMs   = b.startUtc.toMillis()
     const blocks    = getBlocks(startMs, b.durationMin)
+    const slotLockRefs = blocks.map(ms =>
+      doc(db, 'slotLocks', slotLockId(b.consultantId, ms)),
+    )
+    const userLockRefs = blocks.map(ms =>
+      doc(db, 'userLocks', userLockId(b.clientId, ms)),
+    )
 
-    // Check + create slot locks (will throw if any already exist — double-book protection)
-    for (const ms of blocks) {
-      const lockRef = doc(db, 'slotLocks', slotLockId(b.consultantId, ms))
-      const lockSnap = await tx.get(lockRef)
-      if (lockSnap.exists()) throw new Error('This time slot was just taken by another booking')
-      tx.set(lockRef, {
+    const slotLockSnaps = await Promise.all(slotLockRefs.map(ref => tx.get(ref)))
+    if (slotLockSnaps.some(snap => snap.exists())) {
+      throw new Error('This time slot was just taken by another booking')
+    }
+
+    const userLockSnaps = await Promise.all(userLockRefs.map(ref => tx.get(ref)))
+    if (userLockSnaps.some(snap => snap.exists())) {
+      throw new Error('Client already has a booking at this time')
+    }
+
+    blocks.forEach((ms, index) => {
+      tx.set(slotLockRefs[index], {
         consultantId: b.consultantId, bookingId,
         startUtc: Timestamp.fromMillis(ms),
         endUtc: Timestamp.fromMillis(ms + 30 * 60 * 1000),
         createdAt: serverTimestamp(),
       })
-    }
-
-    // Check + create user lock (first accept wins for client too)
-    for (const ms of blocks) {
-      const lockRef = doc(db, 'userLocks', userLockId(b.clientId, ms))
-      const lockSnap = await tx.get(lockRef)
-      if (lockSnap.exists()) throw new Error('Client already has a booking at this time')
-      tx.set(lockRef, {
+      tx.set(userLockRefs[index], {
         clientId: b.clientId, bookingId,
         startUtc: Timestamp.fromMillis(ms),
         endUtc: Timestamp.fromMillis(ms + 30 * 60 * 1000),
         createdAt: serverTimestamp(),
       })
-    }
+    })
 
     // Accept the booking, write WhatsApp number
     tx.update(bookingRef, {
@@ -148,9 +153,6 @@ export async function acceptBooking(bookingId, consultantWhatsapp) {
 
   // Auto-cancel other overlapping PENDING bookings for the same consultant
   await _cancelOverlappingPending(b.consultantId, b.startUtc.toMillis(), b.endUtc.toMillis(), bookingId, consultantData.name)
-
-  // Auto-cancel other overlapping PENDING bookings for the same client
-  await _cancelClientOverlappingPending(b.clientId, b.startUtc.toMillis(), b.endUtc.toMillis(), bookingId, clientData.name)
 }
 
 // ─── rejectBooking ─────────────────────────────────────────────────────────
@@ -269,37 +271,5 @@ async function _cancelOverlappingPending(consultantId, startMs, endMs, excludeBo
       bookingId: d.id, read: false, createdAt: serverTimestamp(),
     })
     await emailAutoCancel({ toEmail: clientData.email, toName: clientData.name, otherName: consultantName, course: b.course, date, time, bookingId: d.id })
-  }
-}
-
-async function _cancelClientOverlappingPending(clientId, startMs, endMs, excludeBookingId, clientName) {
-  const q = query(
-    collection(db, 'bookings'),
-    where('clientId', '==', clientId),
-    where('status', '==', 'PENDING'),
-  )
-  const snaps = await getDocs(q)
-  const toCancel = snaps.docs.filter(d => {
-    if (d.id === excludeBookingId) return false
-    const s = d.data().startUtc.toMillis()
-    const e = d.data().endUtc.toMillis()
-    return s < endMs && e > startMs
-  })
-
-  for (const d of toCancel) {
-    const b = d.data()
-    await updateDoc(doc(db, 'bookings', d.id), {
-      status: 'CANCELLED', cancelledBy: clientId,
-      cancelReason: 'User booked elsewhere',
-      cancelledAt: serverTimestamp(), updatedAt: serverTimestamp(),
-    })
-    const { date, time } = fmt(b.startUtc)
-    const consultantDoc  = await getDoc(doc(db, 'users', b.consultantId))
-    const consultantData = consultantDoc.data() || {}
-    await addDoc(collection(db, 'notifications', b.consultantId, 'items'), {
-      type: 'cancelled', message: `${clientName} booked elsewhere — their ${b.course} request was auto-cancelled.`,
-      bookingId: d.id, read: false, createdAt: serverTimestamp(),
-    })
-    await emailAutoCancel({ toEmail: consultantData.email, toName: consultantData.name, otherName: clientName, course: b.course, date, time, bookingId: d.id })
   }
 }

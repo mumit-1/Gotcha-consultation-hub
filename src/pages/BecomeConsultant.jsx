@@ -149,8 +149,10 @@ export default function BecomeConsultant() {
                 currentUrl={userDoc?.photoURL}
                 name={userDoc?.name || 'U'}
                 onUpload={async (url) => {
-                  await setDoc(doc(db, 'consultants', firebaseUser.uid), { photoURL: url }, { merge: true })
                   await updateDoc(doc(db, 'users', firebaseUser.uid), { photoURL: url })
+                  if (existing) {
+                    await updateDoc(doc(db, 'consultants', firebaseUser.uid), { photoURL: url, updatedAt: serverTimestamp() })
+                  }
                   toast.success('Photo updated!')
                 }}
               />
