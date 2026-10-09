@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Allow: /find
+Allow: /consultant/
+
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /profile
+Disallow: /notifications
+Disallow: /my-consultations
+Disallow: /book/
+Disallow: /availability
+Disallow: /become-consultant
+
+Sitemap: https://gotcha.vercel.app/sitemap.xml

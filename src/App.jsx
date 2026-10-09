@@ -1,122 +1,64 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider } from './contexts/AuthContext'
+import { RequireAuth, RequireAdmin, RedirectIfAuth } from './components/auth/ProtectedRoute'
 
-function App() {
-  const [count, setCount] = useState(0)
+// Pages
+import Landing          from './pages/Landing'
+import Login            from './pages/Auth/Login'
+import Register         from './pages/Auth/Register'
+import ResetPassword    from './pages/Auth/ResetPassword'
+import Dashboard        from './pages/Dashboard'
+import FindConsultants  from './pages/FindConsultants'
+import ConsultantProfile from './pages/ConsultantProfile'
+import BookSession      from './pages/BookSession'
+import BecomeConsultant from './pages/BecomeConsultant'
+import Availability     from './pages/Availability'
+import MyConsultations  from './pages/MyConsultations'
+import Notifications    from './pages/Notifications'
+import Profile          from './pages/Profile'
+import AdminDashboard   from './pages/Admin/AdminDashboard'
 
+export default function App() {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          {/* Public */}
+          <Route path="/"              element={<Landing />} />
+          <Route path="/find"          element={<FindConsultants />} />
+          <Route path="/consultant/:uid" element={<ConsultantProfile />} />
 
-      <div className="ticks"></div>
+          {/* Auth — redirect if already logged in */}
+          <Route path="/login"          element={<RedirectIfAuth><Login /></RedirectIfAuth>} />
+          <Route path="/register"       element={<RedirectIfAuth><Register /></RedirectIfAuth>} />
+          <Route path="/reset-password" element={<RedirectIfAuth><ResetPassword /></RedirectIfAuth>} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+          {/* Protected */}
+          <Route path="/dashboard"          element={<RequireAuth><Dashboard /></RequireAuth>} />
+          <Route path="/book/:consultantId" element={<RequireAuth><BookSession /></RequireAuth>} />
+          <Route path="/become-consultant"  element={<RequireAuth><BecomeConsultant /></RequireAuth>} />
+          <Route path="/availability"       element={<RequireAuth><Availability /></RequireAuth>} />
+          <Route path="/my-consultations"   element={<RequireAuth><MyConsultations /></RequireAuth>} />
+          <Route path="/notifications"      element={<RequireAuth><Notifications /></RequireAuth>} />
+          <Route path="/profile"            element={<RequireAuth><Profile /></RequireAuth>} />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+          {/* Admin */}
+          <Route path="/admin" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
+
+          {/* 404 */}
+          <Route path="*" element={
+            <div className="min-h-screen bg-neo-bg flex items-center justify-center p-8 text-center">
+              <div>
+                <div className="inline-block bg-neo-accent text-white border-4 border-black shadow-neo-xl px-6 py-4 font-black text-8xl mb-6 rotate-2">
+                  404
+                </div>
+                <h1 className="font-black text-4xl uppercase mt-6 mb-4">Page Not Found</h1>
+                <a href="/" className="btn btn-primary btn-lg">Go Home</a>
+              </div>
+            </div>
+          } />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
-
-export default App
