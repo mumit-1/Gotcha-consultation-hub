@@ -40,7 +40,7 @@ service cloud.firestore {
     function validCourses(courses) {
       return courses is list &&
         courses.size() > 0 &&
-        courses.size() <= 50;
+        courses.size() <= 549;
     }
 
     function validReview(review) {
