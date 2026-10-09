@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { doc, getDoc } from 'firebase/firestore'
@@ -17,7 +17,14 @@ import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { isBefore } from 'date-fns'
 import toast from 'react-hot-toast'
 import { emailBookingRequest } from '../lib/emailjs'
-import { DHAKA_TIME_ZONE, formatDhaka, formatDhakaDateInput, parseDhakaDateTime } from '../lib/dhakaTime'
+import {
+  DHAKA_TIME_ZONE,
+  formatDhaka,
+  formatDhakaDateInput,
+  getDhakaScheduleTime,
+  parseDhakaDateTime,
+  validateDhakaBookingTime,
+} from '../lib/dhakaTime'
 
 export default function BookSession() {
   const { consultantId }        = useParams()
@@ -27,11 +34,17 @@ export default function BookSession() {
   const [consultant, setConsultant] = useState(null)
   const [loading, setLoading]   = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const [form, setForm]         = useState({
     course: [], topic: '', date: '', time: '', duration: 30,
   })
   const [errors, setErrors]     = useState({})
   const offeredCourses = Array.isArray(consultant?.courses) ? consultant.courses : []
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     getDoc(doc(db, 'consultants', consultantId))
@@ -44,6 +57,22 @@ export default function BookSession() {
       .finally(() => setLoading(false))
   }, [consultantId])
 
+  const selectedDay = form.date
+    ? getDhakaScheduleTime(parseDhakaDateTime(form.date, '12:00')).day
+    : null
+  const dayRanges = selectedDay ? consultant?.availability?.[selectedDay] || [] : []
+  const availableTimes = useMemo(() => {
+    if (!consultant || !form.date) return []
+    const times = []
+    for (let minuteOfDay = 0; minuteOfDay < 24 * 60; minuteOfDay += 30) {
+      const time = `${String(Math.floor(minuteOfDay / 60)).padStart(2, '0')}:${String(minuteOfDay % 60).padStart(2, '0')}`
+      const start = parseDhakaDateTime(form.date, time)
+      if (start.getTime() <= now) continue
+      if (validateDhakaBookingTime(consultant, start, form.duration).valid) times.push(time)
+    }
+    return times
+  }, [consultant, form.date, form.duration, now])
+
   const calcPrice = () => {
     if (!consultant || !consultant.price30min) return null
     const extra = Math.max(0, Math.ceil(form.duration / 30) - 1)
@@ -55,7 +84,9 @@ export default function BookSession() {
     if (!offeredCourses.includes(form.course[0])) e.course = 'Select a course this consultant offers'
     if (!form.topic.trim())                e.topic    = 'Describe your topic'
     if (!form.date)                        e.date     = 'Pick a date'
-    if (!form.time)                        e.time     = 'Pick a time'
+    if (!availableTimes.includes(form.time)) e.time = availableTimes.length
+      ? 'Choose one of the available start times'
+      : 'No start times are available for this date and duration'
     if (form.duration < 30)               e.duration = 'Minimum 30 minutes'
     if (form.date && form.time) {
       const dateTime = parseDhakaDateTime(form.date, form.time)
@@ -77,6 +108,11 @@ export default function BookSession() {
     setSubmitting(true)
     try {
       const startUtc = parseDhakaDateTime(form.date, form.time)
+      const slotValidation = validateDhakaBookingTime(consultant, startUtc, form.duration)
+      if (!slotValidation.valid) {
+        toast.error(slotValidation.reason)
+        return
+      }
 
       // Fetch consultant user doc for email
       const cUserSnap = await getDoc(doc(db, 'users', consultantId))
@@ -211,23 +247,71 @@ export default function BookSession() {
                     type="date"
                     min={today}
                     value={form.date}
-                    onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                    onChange={e => setForm(f => ({ ...f, date: e.target.value, time: '' }))}
                     error={errors.date}
                   />
-                  <Input
-                    label={`Start Time (${DHAKA_TIME_ZONE}, UTC+6)`}
-                    type="time"
-                    value={form.time}
-                    onChange={e => setForm(f => ({ ...f, time: e.target.value }))}
-                    error={errors.time}
-                  />
+                  <div>
+                    <label className="label" htmlFor="booking-time">
+                      Start Time ({DHAKA_TIME_ZONE}, UTC+6)
+                    </label>
+                    <select
+                      id="booking-time"
+                      className="select"
+                      value={form.time}
+                      disabled={!form.date || availableTimes.length === 0}
+                      onChange={e => setForm(f => ({ ...f, time: e.target.value }))}
+                    >
+                      <option value="">Choose an available time</option>
+                      {availableTimes.map(time => (
+                        <option key={time} value={time}>
+                          {formatDhaka(parseDhakaDateTime(form.date, time), {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.time && (
+                      <p className="mt-1 text-xs font-black text-neo-accent uppercase tracking-wide">
+                        {errors.time}
+                      </p>
+                    )}
+                  </div>
                 </div>
+                {form.date && dayRanges.length > 0 && (
+                  <p className="mb-4 font-bold text-xs text-black/60">
+                    Consultant’s {selectedDay} hours: {dayRanges.map(range => `${range.start}–${range.end}`).join(', ')} Bangladesh time.
+                    Available starts are filtered by the selected session duration.
+                  </p>
+                )}
+                {form.date && dayRanges.length === 0 && (
+                  <p className="mb-4 font-bold text-xs text-black/60">
+                    No weekly hours are set for {selectedDay}; any future 30-minute start time that fits the selected duration is allowed, unless the consultant is manually busy.
+                  </p>
+                )}
+                {consultant.manualBusy?.until?.toMillis?.() > now && (
+                  <p className="mb-4 font-black text-xs text-neo-accent">
+                    This consultant is marked busy until {formatDhaka(
+                      new Date(consultant.manualBusy.until.toMillis()),
+                      { dateStyle: 'medium', timeStyle: 'short' },
+                    )} Bangladesh time. Only later times can be requested.
+                  </p>
+                )}
+                {form.date && availableTimes.length === 0 && (
+                  <p className="mb-4 font-black text-xs text-neo-accent">
+                    No available start times for this date and duration. Try another date or a shorter session.
+                  </p>
+                )}
                 <div>
                   <label className="label">Duration</label>
                   <select
                     className="select"
                     value={form.duration}
-                    onChange={e => setForm(f => ({ ...f, duration: Number(e.target.value) }))}
+                    onChange={e => setForm(f => ({
+                      ...f,
+                      duration: Number(e.target.value),
+                      time: '',
+                    }))}
                   >
                     {[30, 60, 90, 120, 150, 180].map(m => (
                       <option key={m} value={m}>{m} min</option>

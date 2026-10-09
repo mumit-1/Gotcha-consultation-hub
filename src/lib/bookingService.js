@@ -7,6 +7,7 @@ import {
   emailBookingAccepted, emailBookingCancelled, emailBookingRejected, emailAutoCancel,
 } from './emailjs'
 import { formatDhaka } from './dhakaTime'
+import { validateDhakaBookingTime } from './dhakaTime'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -42,29 +43,41 @@ export async function createBooking({
   course, topic, startUtc, durationMin, price,
 }) {
   const endUtc = new Date(startUtc.getTime() + durationMin * 60 * 1000)
+  const bookingRef = doc(collection(db, 'bookings'))
+  const notificationRef = doc(collection(db, 'notifications', consultantId, 'items'))
 
-  const ref = await addDoc(collection(db, 'bookings'), {
-    consultantId, clientId, course, topic,
-    startUtc: Timestamp.fromDate(startUtc),
-    endUtc:   Timestamp.fromDate(endUtc),
-    durationMin, price,
-    status: 'PENDING',
-    whatsappNumber: null,
-    cancelledBy: null, cancelReason: null, cancelledAt: null,
-    clientRating: null, consultantRating: null,
-    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  await runTransaction(db, async (tx) => {
+    const consultantSnap = await tx.get(doc(db, 'consultants', consultantId))
+    if (!consultantSnap.exists()) throw new Error('Consultant profile not found')
+    const consultant = consultantSnap.data()
+    const slotValidation = validateDhakaBookingTime(consultant, startUtc, durationMin)
+    if (!slotValidation.valid) throw new Error(slotValidation.reason)
+    if (startUtc.getTime() <= Date.now()) {
+      throw new Error('Choose a future consultation time')
+    }
+
+    tx.set(bookingRef, {
+      consultantId, clientId, course, topic,
+      startUtc: Timestamp.fromDate(startUtc),
+      endUtc:   Timestamp.fromDate(endUtc),
+      durationMin, price,
+      status: 'PENDING',
+      whatsappNumber: null,
+      cancelledBy: null, cancelReason: null, cancelledAt: null,
+      clientRating: null, consultantRating: null,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    })
+
+    tx.set(notificationRef, {
+      type: 'new_request',
+      message: `${clientName} wants to book you for ${course}`,
+      bookingId: bookingRef.id,
+      read: false,
+      createdAt: serverTimestamp(),
+    })
   })
 
-  // Create in-app notification for consultant
-  await addDoc(collection(db, 'notifications', consultantId, 'items'), {
-    type: 'new_request',
-    message: `${clientName} wants to book you for ${course}`,
-    bookingId: ref.id,
-    read: false,
-    createdAt: serverTimestamp(),
-  })
-
-  return ref.id
+  return bookingRef.id
 }
 
 // ─── acceptBooking ─────────────────────────────────────────────────────────

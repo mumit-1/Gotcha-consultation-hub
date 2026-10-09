@@ -83,3 +83,68 @@ export function computeDhakaAvailabilityStatus(consultant, now = Date.now()) {
     ? 'available'
     : 'offline'
 }
+
+export function validateDhakaBookingTime(consultant, start, durationMin) {
+  if (
+    !(start instanceof Date) ||
+    Number.isNaN(start.getTime()) ||
+    !Number.isInteger(durationMin) ||
+    durationMin < 30
+  ) {
+    return { valid: false, reason: 'Choose a valid consultation date, time, and duration.' }
+  }
+
+  const end = new Date(start.getTime() + durationMin * 60 * 1000)
+  const startSchedule = getDhakaScheduleTime(start)
+  const endSchedule = getDhakaScheduleTime(end)
+
+  if (
+    formatDhakaDateInput(start) !== formatDhakaDateInput(end) ||
+    startSchedule.day !== endSchedule.day
+  ) {
+    return { valid: false, reason: 'The session must end on the same Bangladesh-time day.' }
+  }
+
+  let busyUntil = null
+  if (consultant.manualBusy) {
+    busyUntil = consultant.manualBusy.until?.toMillis?.()
+    if (typeof busyUntil !== 'number') {
+      return { valid: false, reason: 'The consultant has an invalid busy-time setting.' }
+    }
+  }
+  if (busyUntil && start.getTime() < busyUntil) {
+    return {
+      valid: false,
+      reason: `The consultant is marked busy until ${formatDhaka(new Date(busyUntil), {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })} Bangladesh time.`,
+    }
+  }
+
+  const ranges = consultant.availability?.[startSchedule.day] || []
+  if (!Array.isArray(ranges)) {
+    return { valid: false, reason: 'The consultant’s availability schedule is invalid.' }
+  }
+  if (ranges.length > 0) {
+    const validRanges = ranges.filter(range =>
+      typeof range?.start === 'string' &&
+      typeof range?.end === 'string' &&
+      /^\d{2}:\d{2}$/.test(range.start) &&
+      /^\d{2}:\d{2}$/.test(range.end) &&
+      range.start < range.end
+    )
+    const fitsRange = validRanges.some(range =>
+      range.start <= startSchedule.time &&
+      range.end >= endSchedule.time
+    )
+    if (!fitsRange) {
+      return {
+        valid: false,
+        reason: 'The selected time and duration are outside the consultant’s listed availability.',
+      }
+    }
+  }
+
+  return { valid: true, reason: '' }
+}
