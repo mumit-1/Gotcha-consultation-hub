@@ -1,189 +1,134 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
-  collection, query, where, getDocs, getDoc, updateDoc, doc,
-  runTransaction, serverTimestamp, addDoc, Timestamp,
+  collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
-import { emailBookingCancelled } from '../lib/emailjs'
-import { formatDhaka } from '../lib/dhakaTime'
+import { useAuth } from '../contexts/useAuth'
+import { cancelBooking, completeBooking } from '../lib/bookingService'
 
-const INTERVAL_MS  = 3 * 60 * 1000 // run every 3 minutes while app is open
+const INTERVAL_MS = 60 * 1000
 
 export function useSweeper() {
-  const { firebaseUser, userDoc } = useAuth()
-  const timerRef = useRef(null)
+  const { firebaseUser } = useAuth()
+  const bookingsRef = useRef(new Map())
+  const sweepInProgress = useRef(false)
 
   const sweep = useCallback(async () => {
-    if (!firebaseUser) return
-    const uid = firebaseUser.uid
-    const now = Timestamp.now()
-
+    if (!firebaseUser || sweepInProgress.current) return
+    sweepInProgress.current = true
     try {
-      // ── 1. Auto-cancel expired PENDING bookings where this user is client ──
-      const pendingClientQ = query(
-        collection(db, 'bookings'),
-        where('clientId', '==', uid),
-        where('status', '==', 'PENDING'),
-      )
-      const pendingClientSnaps = await getDocs(pendingClientQ)
-      for (const d of pendingClientSnaps.docs) {
-        const b = d.data()
-        if (b.startUtc.toMillis() < now.toMillis()) {
-          await updateDoc(doc(db, 'bookings', d.id), {
-            status: 'CANCELLED',
-            cancelledBy: uid,
-            cancelReason: 'Not accepted in time',
-            cancelledAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-          // Notify consultant
-          await addDoc(collection(db, 'notifications', b.consultantId, 'items'), {
-            type: 'cancelled',
-            message: `A pending ${b.course} request expired automatically.`,
-            bookingId: d.id, read: false, createdAt: serverTimestamp(),
-          })
-        }
-      }
+      const bookings = [...bookingsRef.current.values()]
+      const now = Date.now()
 
-      // Cancel this client's other pending requests after an overlapping session is accepted.
-      const acceptedClientQ = query(
-        collection(db, 'bookings'),
-        where('clientId', '==', uid),
-        where('status', '==', 'ACCEPTED'),
-      )
-      const [acceptedClientSnaps, remainingPendingSnaps] = await Promise.all([
-        getDocs(acceptedClientQ),
-        getDocs(query(
-          collection(db, 'bookings'),
-          where('clientId', '==', uid),
-          where('status', '==', 'PENDING'),
-        )),
-      ])
-      for (const acceptedDoc of acceptedClientSnaps.docs) {
-        const accepted = acceptedDoc.data()
-        const acceptedStart = accepted.startUtc.toMillis()
-        const acceptedEnd = accepted.endUtc.toMillis()
-
-        for (const pendingDoc of remainingPendingSnaps.docs) {
-          if (pendingDoc.id === acceptedDoc.id) continue
-          const pendingRef = doc(db, 'bookings', pendingDoc.id)
-          const acceptedRef = doc(db, 'bookings', acceptedDoc.id)
-          const cancelledBooking = await runTransaction(db, async (tx) => {
-            const [acceptedSnap, pendingSnap] = await Promise.all([
-              tx.get(acceptedRef),
-              tx.get(pendingRef),
-            ])
-            if (
-              !acceptedSnap.exists() ||
-              acceptedSnap.data().status !== 'ACCEPTED' ||
-              !pendingSnap.exists() ||
-              pendingSnap.data().status !== 'PENDING' ||
-              pendingSnap.data().clientId !== uid
-            ) return null
-
-            const pending = pendingSnap.data()
-            if (
-              pending.startUtc.toMillis() >= acceptedEnd ||
-              pending.endUtc.toMillis() <= acceptedStart
-            ) return null
-
-            tx.update(pendingRef, {
-              status: 'CANCELLED',
-              cancelledBy: uid,
-              cancelReason: 'User booked elsewhere',
-              cancelledAt: serverTimestamp(),
+      for (const booking of bookings) {
+        try {
+          if (
+            booking.status === 'PENDING' &&
+            booking.startUtc?.toMillis?.() <= now
+          ) {
+            await cancelBooking(booking.id, firebaseUser.uid, 'Not accepted in time')
+            continue
+          }
+          if (
+            booking.status === 'ACCEPTED' &&
+            booking.consultantId === firebaseUser.uid &&
+            booking.startUtc?.toMillis?.() <= now &&
+            booking.endUtc?.toMillis?.() > now
+          ) {
+            await updateDoc(doc(db, 'bookings', booking.id), {
+              status: 'IN_PROGRESS',
               updatedAt: serverTimestamp(),
             })
-            return pending
-          })
-
-          if (!cancelledBooking) continue
-
-          await addDoc(collection(db, 'notifications', cancelledBooking.consultantId, 'items'), {
-            type: 'cancelled',
-            message: `${userDoc?.name || 'The client'} booked elsewhere — their ${cancelledBooking.course} request was auto-cancelled.`,
-            bookingId: pendingDoc.id,
-            read: false,
-            createdAt: serverTimestamp(),
-          })
-
-          const consultantSnap = await getDoc(doc(db, 'users', cancelledBooking.consultantId))
-          const start = cancelledBooking.startUtc.toDate()
-          await emailBookingCancelled({
-            toEmail: consultantSnap.data()?.email,
-            toName: consultantSnap.data()?.name,
-            byName: userDoc?.name || 'The client',
-            course: cancelledBooking.course,
-            date: formatDhaka(start, { dateStyle: 'medium' }),
-            time: formatDhaka(start, { timeStyle: 'short' }),
-            reason: 'Another booking was accepted for this time.',
-            bookingId: pendingDoc.id,
+          }
+          if (
+            ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status) &&
+            booking.completedCounted !== true &&
+            booking.endUtc?.toMillis?.() < now
+          ) {
+            await completeBooking(booking.id)
+          }
+        } catch (error) {
+          console.error('[Sweeper] Could not process booking', {
+            bookingId: booking.id,
+            code: error?.code || 'unknown',
+            message: error?.message || String(error),
           })
         }
       }
 
-      // ── 2. Auto-cancel expired PENDING bookings where this user is consultant ──
-      const pendingConsQ = query(
-        collection(db, 'bookings'),
-        where('consultantId', '==', uid),
-        where('status', '==', 'PENDING'),
+      const pendingClient = bookings.filter(item =>
+        item.clientId === firebaseUser.uid && item.status === 'PENDING',
       )
-      const pendingConsSnaps = await getDocs(pendingConsQ)
-      for (const d of pendingConsSnaps.docs) {
-        const b = d.data()
-        if (b.startUtc.toMillis() < now.toMillis()) {
-          await updateDoc(doc(db, 'bookings', d.id), {
-            status: 'CANCELLED',
-            cancelledBy: uid,
-            cancelReason: 'Not accepted in time',
-            cancelledAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-          await addDoc(collection(db, 'notifications', b.clientId, 'items'), {
-            type: 'cancelled',
-            message: `Your ${b.course} request was auto-cancelled (not accepted).`,
-            bookingId: d.id, read: false, createdAt: serverTimestamp(),
-          })
-        }
-      }
-
-      // ── 3. Persist IN_PROGRESS / COMPLETED for ACCEPTED bookings ──────────
-      const acceptedQ = query(
-        collection(db, 'bookings'),
-        where('consultantId', '==', uid),
-        where('status', '==', 'ACCEPTED'),
+      const acceptedClient = bookings.filter(item =>
+        item.clientId === firebaseUser.uid && ['ACCEPTED', 'IN_PROGRESS'].includes(item.status),
       )
-      const acceptedSnaps = await getDocs(acceptedQ)
-      for (const d of acceptedSnaps.docs) {
-        const b = d.data()
-        const start = b.startUtc.toMillis()
-        const end   = b.endUtc.toMillis()
-        const ts    = now.toMillis()
-
-        if (ts >= start && ts < end) {
-          await updateDoc(doc(db, 'bookings', d.id), {
-            status: 'IN_PROGRESS', updatedAt: serverTimestamp(),
-          })
-        } else if (ts >= end) {
-          await updateDoc(doc(db, 'bookings', d.id), {
-            status: 'COMPLETED', updatedAt: serverTimestamp(),
-          })
+      for (const pending of pendingClient) {
+        const pendingStart = pending.startUtc?.toMillis?.()
+        const pendingEnd = pending.endUtc?.toMillis?.()
+        const overlaps = acceptedClient.some(accepted =>
+          accepted.id !== pending.id &&
+          pendingStart < accepted.endUtc?.toMillis?.() &&
+          pendingEnd > accepted.startUtc?.toMillis?.(),
+        )
+        if (overlaps) {
+          try {
+            await cancelBooking(pending.id, firebaseUser.uid, 'User booked elsewhere')
+          } catch (error) {
+            console.error('[Sweeper] Could not cancel overlapping request', {
+              bookingId: pending.id,
+              code: error?.code || 'unknown',
+              message: error?.message || String(error),
+            })
+          }
         }
       }
-
-    } catch (err) {
-      // Sweeper is best-effort; never crash the app
-      console.warn('[Sweeper] error:', err.message)
+    } finally {
+      sweepInProgress.current = false
     }
-  }, [firebaseUser, userDoc])
+  }, [firebaseUser])
 
   useEffect(() => {
-    if (!firebaseUser) return
-    // Run once immediately on mount
-    sweep()
-    // Then every 3 minutes
-    timerRef.current = setInterval(sweep, INTERVAL_MS)
-    return () => clearInterval(timerRef.current)
-  }, [sweep, firebaseUser])
+    if (!firebaseUser) {
+      bookingsRef.current.clear()
+      return undefined
+    }
+
+    const statuses = ['PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED']
+    const listen = (field) => onSnapshot(
+      query(
+        collection(db, 'bookings'),
+        where(field, '==', firebaseUser.uid),
+        where('status', 'in', statuses),
+      ),
+      snapshot => {
+        const otherFieldBookings = [...bookingsRef.current.values()].filter(
+          booking => booking[field === 'clientId' ? 'consultantId' : 'clientId'] === firebaseUser.uid,
+        )
+        const current = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+        bookingsRef.current = new Map(
+          [...otherFieldBookings, ...current].map(booking => [booking.id, booking]),
+        )
+        sweep()
+      },
+      error => console.error('[Sweeper] Booking listener failed', {
+        code: error?.code || 'unknown',
+        message: error?.message || String(error),
+      }),
+    )
+
+    const unsubClient = listen('clientId')
+    const unsubConsultant = listen('consultantId')
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') sweep()
+    }
+    const timer = setInterval(sweep, INTERVAL_MS)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      unsubClient()
+      unsubConsultant()
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      bookingsRef.current.clear()
+    }
+  }, [firebaseUser, sweep])
 }

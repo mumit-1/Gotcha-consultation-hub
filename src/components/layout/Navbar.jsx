@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, Bell, LogOut, User, LayoutDashboard, Shield, BookOpen, Search } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
+import { useAuth } from '../../contexts/useAuth'
 import Avatar from '../ui/Avatar'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
@@ -11,17 +11,18 @@ export default function Navbar() {
   const { firebaseUser, userDoc, isAdmin, logout, isLoggedIn } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadState, setUnreadState] = useState({ uid: null, count: 0 })
+  const unreadCount = unreadState.uid === firebaseUser?.uid ? unreadState.count : 0
   const navigate = useNavigate()
 
   // Listen to unread notifications (owner-only, tiny subcollection — safe)
   useEffect(() => {
-    if (!firebaseUser) { setUnreadCount(0); return }
+    if (!firebaseUser) return
     const q = query(
       collection(db, 'notifications', firebaseUser.uid, 'items'),
       where('read', '==', false)
     )
-    const unsub = onSnapshot(q, snap => setUnreadCount(snap.size))
+    const unsub = onSnapshot(q, snap => setUnreadState({ uid: firebaseUser.uid, count: snap.size }))
     return unsub
   }, [firebaseUser])
 
@@ -37,6 +38,11 @@ export default function Navbar() {
         { to: '/find', label: 'Find Help', icon: <Search className="h-4 w-4" strokeWidth={3} /> },
         { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" strokeWidth={3} /> },
         { to: '/my-consultations', label: 'Sessions', icon: <BookOpen className="h-4 w-4" strokeWidth={3} /> },
+        {
+          to: userDoc?.isConsultant ? '/become-consultant' : '/profile',
+          label: userDoc?.isConsultant ? 'Consultant Profile' : 'My Profile',
+          icon: <User className="h-4 w-4" strokeWidth={3} />,
+        },
       ]
     : [
         { to: '/find', label: 'Find Help', icon: <Search className="h-4 w-4" strokeWidth={3} /> },
@@ -57,13 +63,14 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="hidden xl:flex items-center gap-1">
             {navLinks.map(({ to, label, icon }) => (
               <NavLink
                 key={to}
                 to={to}
+                title={label}
                 className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-3 py-2 border-3 font-black text-sm uppercase tracking-wide transition-all duration-100
+                  `flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2 xl:px-3 py-2 border-3 font-black text-sm uppercase tracking-wide transition-all duration-100
                   ${isActive
                     ? 'border-black bg-neo-secondary shadow-neo-sm'
                     : 'border-transparent hover:border-black hover:bg-neo-secondary hover:shadow-[2px_2px_0px_0px_#000]'
@@ -126,6 +133,9 @@ export default function Navbar() {
                         </div>
                         {[
                           { to: '/profile', label: 'My Profile', icon: <User className="h-4 w-4" strokeWidth={3} /> },
+                          ...(userDoc?.isConsultant
+                            ? [{ to: '/become-consultant', label: 'Update Consultancy Profile', icon: <User className="h-4 w-4" strokeWidth={3} /> }]
+                            : [{ to: '/become-consultant', label: 'Become a Consultant', icon: <User className="h-4 w-4" strokeWidth={3} /> }]),
                           { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" strokeWidth={3} /> },
                           ...(isAdmin ? [{ to: '/admin', label: 'Admin Panel', icon: <Shield className="h-4 w-4" strokeWidth={3} /> }] : []),
                         ].map(({ to, label, icon }) => (
@@ -151,7 +161,7 @@ export default function Navbar() {
                 </div>
               </>
             ) : (
-              <div className="hidden md:flex items-center gap-2">
+              <div className="hidden xl:flex items-center gap-2">
                 <Link to="/login" className="btn btn-outline btn-sm">Log In</Link>
                 <Link to="/register" className="btn btn-primary btn-sm">Sign Up</Link>
               </div>
@@ -159,7 +169,7 @@ export default function Navbar() {
 
             {/* Hamburger */}
             <button
-              className="md:hidden p-2 border-4 border-black bg-white shadow-neo-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all duration-100"
+              className="xl:hidden p-2 border-4 border-black bg-white shadow-neo-sm active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all duration-100"
               onClick={() => setMenuOpen(o => !o)}
               aria-label="Toggle menu"
               aria-expanded={menuOpen}
@@ -178,7 +188,7 @@ export default function Navbar() {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="md:hidden border-t-4 border-black bg-neo-bg overflow-hidden"
+            className="xl:hidden border-t-4 border-black bg-neo-bg overflow-hidden"
           >
             <div className="page-container py-4 flex flex-col gap-2">
               {navLinks.map(({ to, label, icon }) => (

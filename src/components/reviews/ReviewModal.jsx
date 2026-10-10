@@ -10,6 +10,7 @@ import Textarea from '../ui/Textarea'
 import { Star } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { runVerifiedWrite } from '../../lib/verifiedWrites'
+import ReportModal from '../reports/ReportModal'
 
 export default function ReviewModal({ booking, currentUid, onClose }) {
   const isConsultant  = booking.consultantId === currentUid
@@ -19,6 +20,7 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
   const [hover, setHover] = useState(0)
   const [text, setText]   = useState('')
   const [loading, setLoading] = useState(false)
+  const [showReport, setShowReport] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -31,7 +33,7 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
       const consultantRef = doc(db, 'consultants', booking.consultantId)
       const review = { stars, review: text.trim(), createdAt: serverTimestamp() }
 
-      await runVerifiedWrite('submit review', () => runTransaction(db, async (tx) => {
+      await runVerifiedWrite('submit review', async () => runTransaction(db, async (tx) => {
         const [bookingSnap, reviewSnap] = await Promise.all([
           tx.get(bookingRef),
           tx.get(reviewRef),
@@ -57,20 +59,14 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
           throw new Error('You have already reviewed this session')
         }
 
-        if (reviewSnap.exists()) {
-          tx.update(reviewRef, {
-            [reviewField]: review,
-            ...(!isConsultant && { ratingCounted: true }),
-          })
-        } else {
-          tx.set(reviewRef, {
-            consultantId: bookingData.consultantId,
-            clientId: bookingData.clientId,
-            [reviewField]: review,
-            ...(!isConsultant && { ratingCounted: true }),
-          })
+        const storedReview = {
+          consultantId: bookingData.consultantId,
+          clientId: bookingData.clientId,
+          ...(reviewSnap.exists() ? reviewData : {}),
+          [reviewField]: review,
+          ...(!isConsultant && { ratingCounted: true }),
         }
-
+        tx.set(reviewRef, storedReview)
         tx.update(bookingRef, {
           [reviewField]: review,
           updatedAt: serverTimestamp(),
@@ -134,13 +130,27 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
           onChange={e => setText(e.target.value)}
           placeholder="What went well? What could be improved?"
           rows={3}
+          maxLength={2000}
         />
 
         <div className="flex gap-3">
-          <Button type="button" variant="outline" onClick={onClose} full>Cancel</Button>
-          <Button type="submit" variant="secondary" loading={loading} full>Submit Review</Button>
+          <Button type="button" variant="outline" onClick={onClose} full>Remind me later</Button>
+          <Button type="submit" variant="secondary" loading={loading} disabled={stars === 0} full>Submit Review</Button>
         </div>
+        {isConsultant && (
+          <Button type="button" variant="danger" full onClick={() => setShowReport(true)}>
+            Report client
+          </Button>
+        )}
       </form>
+      {isConsultant && (
+        <ReportModal
+          open={showReport}
+          onClose={() => setShowReport(false)}
+          targetId={booking.clientId}
+          targetName={booking.clientName || 'client'}
+        />
+      )}
     </Modal>
   )
 }

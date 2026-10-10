@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
 import { auth } from '../../lib/firebase'
+import { db } from '../../lib/firebase'
 import PageLayout from '../../components/layout/PageLayout'
 import Input from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
 import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ensureUserDoc } from '../../lib/verifiedWrites'
 
 export default function Login() {
   const [form, setForm]       = useState({ email: '', password: '' })
@@ -24,7 +25,12 @@ export default function Login() {
     setLoading(true)
     try {
       const credential = await signInWithEmailAndPassword(auth, form.email.trim(), form.password)
-      await ensureUserDoc(credential.user)
+      const userSnap = await getDoc(doc(db, 'users', credential.user.uid))
+      if (!userSnap.exists()) {
+        await signOut(auth)
+        toast.error('No account found. Please sign up.')
+        return
+      }
       navigate(from, { replace: true })
     } catch (err) {
       const msg = {

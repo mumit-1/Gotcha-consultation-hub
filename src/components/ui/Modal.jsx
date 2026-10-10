@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
-import Button from './Button'
 
 /**
  * Neo-brutalist Modal

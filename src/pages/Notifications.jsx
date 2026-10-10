@@ -2,15 +2,14 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   collection, query, orderBy, onSnapshot,
-  updateDoc, doc, writeBatch, serverTimestamp, where,
+  updateDoc, doc, writeBatch,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
-import { useSweeper } from '../hooks/useSweeper'
+import { useAuth } from '../contexts/useAuth'
 import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import Button from '../components/ui/Button'
-import { Bell, CheckCheck, BookOpen, Zap, X, Star, AlertTriangle, Clock } from 'lucide-react'
+import { Bell, CheckCheck, BookOpen, Zap, X, Star, Clock } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 const ICON_MAP = {
@@ -33,7 +32,6 @@ const COLOR_MAP = {
 }
 
 export default function Notifications() {
-  useSweeper()
   const { firebaseUser } = useAuth()
   const [notifs, setNotifs]   = useState([])
   const [loading, setLoading] = useState(true)

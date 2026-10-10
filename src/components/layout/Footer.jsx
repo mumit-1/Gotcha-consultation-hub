@@ -1,12 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Star } from 'lucide-react'
-
-const footerLinks = [
-  { label: 'Find Consultants', to: '/find' },
-  { label: 'Become a Consultant', to: '/become-consultant' },
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Profile', to: '/profile' },
-]
+import { useAuth } from '../../contexts/useAuth'
 
 const marqueeItems = [
   'FREE CONSULTATIONS', 'FIND YOUR EXPERT', 'HELP EACH OTHER',
@@ -14,6 +8,19 @@ const marqueeItems = [
 ]
 
 export default function Footer() {
+  const { isLoggedIn, userDoc } = useAuth()
+  const footerLinks = [
+    { label: 'Find Consultants', to: '/find' },
+    {
+      label: userDoc?.isConsultant ? 'Consultant Profile' : 'Become a Consultant',
+      to: '/become-consultant',
+    },
+    ...(isLoggedIn ? [
+      { label: 'Dashboard', to: '/dashboard' },
+      { label: 'Profile', to: '/profile' },
+    ] : []),
+  ]
+
   return (
     <footer className="border-t-4 border-black mt-auto">
       {/* Marquee strip */}

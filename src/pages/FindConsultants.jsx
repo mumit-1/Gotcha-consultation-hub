@@ -2,20 +2,23 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   collection, query, where, orderBy, limit, startAfter,
-  getDocs, doc, getDoc,
+  getDocs,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import CourseSelector from '../components/courses/CourseSelector'
 import Avatar from '../components/ui/Avatar'
 import Button from '../components/ui/Button'
-import { AvailabilityBadge, StatusBadge } from '../components/ui/Badge'
+import { AvailabilityBadge } from '../components/ui/Badge'
 import AnimatedSection from '../components/ui/AnimatedSection'
-import { Star, Search, X, Filter, ChevronRight, SlidersHorizontal } from 'lucide-react'
+import { Star, Search, X, ChevronRight, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { computeDhakaAvailabilityStatus } from '../lib/dhakaTime'
+import { getCachedData } from '../lib/dataCache'
+import { bracuDepartments } from '../constants/departments'
+import ConsultantTierBadge from '../components/ui/ConsultantTierBadge'
 
 const PAGE_SIZE = 12
 
@@ -28,89 +31,132 @@ function ConsultantCard({ c, currentUid }) {
     <motion.div
       whileHover={{ y: -4, boxShadow: '12px 12px 0px 0px #000' }}
       transition={{ duration: 0.15 }}
-      className="card flex flex-col"
+      className="card flex h-full min-h-[20rem] flex-col"
       style={{ boxShadow: '8px 8px 0px 0px #000' }}
     >
       {/* Header */}
-      <div className="border-b-4 border-black p-4 bg-neo-bg flex items-center gap-3">
-        <Avatar src={c.photoURL} name={c.name} size="md" />
+      <div className="flex min-h-[6.5rem] items-center gap-3 border-b-4 border-black bg-neo-bg p-4">
+        <Avatar src={c.photoURL} name={c.name} size="lg" className="h-16 w-16 shrink-0" />
         <div className="min-w-0 flex-1">
-          <h3 className="font-black text-base uppercase truncate">{c.name}</h3>
-          <AvailabilityBadge status={c.computedStatus} />
+          <h3 className="truncate font-black text-base uppercase" title={c.name}>{c.name}</h3>
+          <div className="mt-1 whitespace-nowrap">
+            <AvailabilityBadge status={c.computedStatus} />
+          </div>
         </div>
-        <div className={`badge text-sm font-black ${isFree ? 'badge-green' : 'badge-yellow'}`}>
+        <div className={`badge shrink-0 whitespace-nowrap text-sm font-black ${isFree ? 'badge-green' : 'badge-yellow'}`}>
           {isFree ? 'FREE' : `${c.price30min}+`}
         </div>
       </div>
 
       {/* Body */}
-      <div className="p-4 flex-1 flex flex-col gap-3">
-        {c.bio && (
-          <p className="font-bold text-sm text-black/70 line-clamp-2 leading-relaxed">{c.bio}</p>
-        )}
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <p className="min-h-10 break-words font-bold text-sm leading-5 text-black/70 line-clamp-2">
+          {c.bio || ''}
+        </p>
 
         {/* Courses */}
-        {c.courses?.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {c.courses.slice(0, 5).map(code => (
-              <span key={code} className="badge badge-muted text-[10px]">{code}</span>
-            ))}
-            {c.courses.length > 5 && (
-              <span className="badge badge-black text-[10px]">+{c.courses.length - 5}</span>
-            )}
-          </div>
-        )}
-
-        {/* Rating + completed */}
-        <div className="flex items-center gap-3 mt-auto pt-2 border-t-2 border-black/10">
-          {rating ? (
-            <div className="flex items-center gap-1">
-              <Star className="h-4 w-4 fill-neo-secondary" strokeWidth={0} />
-              <span className="font-black text-sm">{rating}</span>
-              <span className="font-bold text-xs text-black/50">({c.ratingCount})</span>
-            </div>
-          ) : (
-            <span className="font-bold text-xs text-black/40 uppercase">No reviews yet</span>
-          )}
-          {c.completedCount > 0 && (
-            <span className="font-bold text-xs text-black/50 ml-auto">{c.completedCount} sessions</span>
+        <div className="flex h-8 min-w-0 flex-nowrap items-start gap-1 overflow-hidden" aria-label="Courses offered">
+          {(c.courses || []).slice(0, 3).map(code => (
+            <span key={code} className="badge badge-muted shrink-0 whitespace-nowrap text-[10px]">{code}</span>
+          ))}
+          {(c.courses?.length || 0) > 3 && (
+            <span className="badge badge-black shrink-0 whitespace-nowrap text-[10px]">+{c.courses.length - 3} more</span>
           )}
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="border-t-4 border-black p-3 flex gap-2">
-        <Link
-          to={`/consultant/${c.uid}`}
-          className="btn btn-outline btn-sm flex-1 text-center"
-        >
-          View Profile
-        </Link>
-        {!isOwnProfile && (
+      {/* Ratings, completed sessions, and actions stay anchored at the bottom. */}
+      <div className="mt-auto border-t-4 border-black p-3">
+        <div className="flex min-h-8 min-w-0 items-center gap-2 border-b-2 border-black/10 pb-2">
+          {rating ? (
+            <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
+              <Star className="h-4 w-4 shrink-0 fill-neo-secondary" strokeWidth={0} />
+              <span className="font-black text-sm">{rating}</span>
+              <span className="font-bold text-xs text-black/50">({c.ratingCount})</span>
+            </div>
+          ) : (
+            <span className="truncate font-bold text-xs uppercase text-black/40">No reviews yet</span>
+          )}
+          <span className="ml-auto shrink-0 whitespace-nowrap font-bold text-xs text-black/50">
+            {c.completedCount || 0} sessions
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2 py-2">
+          <ConsultantTierBadge completedCount={c.completedCount || 0} />
+          {c.department && <span className="badge badge-muted text-[10px]">{c.department}</span>}
+        </div>
+        <div className="flex gap-2 pt-3">
           <Link
-            to={`/book/${c.uid}`}
-            className="btn btn-primary btn-sm flex-1 text-center"
+            to={`/consultant/${c.uid}`}
+            className="btn btn-outline btn-sm flex h-10 min-w-0 flex-1 items-center justify-center whitespace-nowrap text-center"
           >
-            Book <ChevronRight className="h-3 w-3" strokeWidth={3} />
+            View Profile
           </Link>
-        )}
+          {!isOwnProfile && (
+            <Link
+              to={`/book/${c.uid}`}
+              className="btn btn-primary btn-sm flex h-10 min-w-0 flex-1 items-center justify-center whitespace-nowrap text-center"
+            >
+              Book <ChevronRight className="h-3 w-3 shrink-0" strokeWidth={3} />
+            </Link>
+          )}
+        </div>
       </div>
     </motion.div>
+  )
+}
+
+function ConsultantCardSkeleton() {
+  return (
+    <div aria-hidden="true" className="card flex h-full min-h-[20rem] animate-pulse flex-col">
+      <div className="flex min-h-[6.5rem] items-center gap-3 border-b-4 border-black bg-neo-bg p-4">
+        <div className="h-16 w-16 shrink-0 border-4 border-black bg-neo-muted" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="h-4 w-3/4 border-2 border-black bg-neo-bg" />
+          <div className="h-6 w-24 border-3 border-black bg-neo-green" />
+        </div>
+        <div className="h-8 w-16 shrink-0 border-3 border-black bg-neo-secondary" />
+      </div>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="min-h-10 space-y-2 pt-1">
+          <div className="h-3 w-full bg-black/10" />
+          <div className="h-3 w-2/3 bg-black/10" />
+        </div>
+        <div className="flex h-8 gap-1 overflow-hidden">
+          <div className="h-6 w-16 border-3 border-black bg-neo-muted" />
+          <div className="h-6 w-16 border-3 border-black bg-neo-muted" />
+          <div className="h-6 w-16 border-3 border-black bg-neo-muted" />
+          <div className="h-6 w-12 border-3 border-black bg-black" />
+        </div>
+      </div>
+      <div className="mt-auto border-t-4 border-black p-3">
+        <div className="flex h-8 items-center justify-between border-b-2 border-black/10 pb-2">
+          <div className="h-4 w-24 bg-black/10" />
+          <div className="h-4 w-20 bg-black/10" />
+        </div>
+        <div className="flex gap-2 pt-3">
+          <div className="h-10 flex-1 border-4 border-black bg-white" />
+          <div className="h-10 flex-1 border-4 border-black bg-neo-accent" />
+        </div>
+      </div>
+    </div>
   )
 }
 
 export default function FindConsultants() {
   const { firebaseUser } = useAuth()
   const [filters, setFilters] = useState({
-    courses: [], nameSearch: '', sortBy: 'rating', availability: 'all',
+    courses: [], nameSearch: '', sortBy: 'rating', availability: 'all', department: '',
   })
   const [showFilters, setShowFilters] = useState(false)
   const [consultants, setConsultants] = useState([])
   const [lastDoc, setLastDoc]         = useState(null)
   const [hasMore, setHasMore]         = useState(false)
-  const [loading, setLoading]         = useState(true)
+  const [loadedFilterKey, setLoadedFilterKey] = useState('')
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError]             = useState(null)
+  const currentFilterKey = `${filters.courses.join(',')}:${filters.department}:${filters.sortBy}:${filters.availability}:${filters.nameSearch.trim().toLowerCase()}`
+  const loading = loadedFilterKey !== currentFilterKey
 
   const buildQuery = useCallback((afterDoc = null) => {
     let q = collection(db, 'consultants')
@@ -123,6 +169,7 @@ export default function FindConsultants() {
       const chunk = filters.courses.slice(0, 30)
       constraints.push(where('courses', 'array-contains-any', chunk))
     }
+    if (filters.department) constraints.push(where('department', '==', filters.department))
 
     if (filters.sortBy === 'rating') {
       constraints.push(orderBy('ratingSum', 'desc'))
@@ -134,13 +181,13 @@ export default function FindConsultants() {
     if (afterDoc) constraints.push(startAfter(afterDoc))
 
     return query(q, ...constraints)
-  }, [filters.courses, filters.sortBy])
+  }, [filters.courses, filters.department, filters.sortBy])
 
   const fetchConsultants = useCallback(async (afterDoc = null) => {
-    try {
-      const q = buildQuery(afterDoc)
-      const snap = await getDocs(q)
-      let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const q = buildQuery(afterDoc)
+    const pageKey = `consultants:find:${filters.courses.join(',')}:${filters.department}:${filters.sortBy}:${afterDoc?.id || 'first'}`
+    const snap = await getCachedData(pageKey, 60_000, () => getDocs(q))
+    let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
       // Client-side name filter
       if (filters.nameSearch.trim()) {
@@ -160,28 +207,33 @@ export default function FindConsultants() {
         docs = docs.filter(c => c.computedStatus === filters.availability)
       }
 
-      const hasNextPage = snap.docs.length > PAGE_SIZE
-      const results = docs.slice(0, PAGE_SIZE)
+    const hasNextPage = snap.docs.length > PAGE_SIZE
+    const results = docs.slice(0, PAGE_SIZE)
 
-      return { results, lastSnap: snap.docs[PAGE_SIZE - 1] ?? null, hasMore: hasNextPage }
-    } catch (err) {
-      throw err
-    }
-  }, [buildQuery, filters.nameSearch, filters.availability])
+    return { results, lastSnap: snap.docs[PAGE_SIZE - 1] ?? null, hasMore: hasNextPage }
+  }, [
+    buildQuery, filters.courses, filters.department, filters.sortBy,
+    filters.nameSearch, filters.availability,
+  ])
 
   useEffect(() => {
-    setLoading(true)
-    setLastDoc(null)
+    let active = true
     fetchConsultants()
       .then(({ results, lastSnap, hasMore }) => {
+        if (!active) return
         setConsultants(results)
         setLastDoc(lastSnap)
         setHasMore(hasMore)
         setError(null)
+        setLoadedFilterKey(currentFilterKey)
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [fetchConsultants])
+      .catch(err => {
+        if (!active) return
+        setError(err.message)
+        setLoadedFilterKey(currentFilterKey)
+      })
+    return () => { active = false }
+  }, [fetchConsultants, currentFilterKey])
 
   const loadMore = async () => {
     if (!lastDoc || loadingMore) return
@@ -196,8 +248,8 @@ export default function FindConsultants() {
     }
   }
 
-  const clearFilters = () => setFilters({ courses: [], nameSearch: '', sortBy: 'rating', availability: 'all' })
-  const hasActiveFilters = filters.courses.length > 0 || filters.nameSearch || filters.availability !== 'all'
+  const clearFilters = () => setFilters({ courses: [], nameSearch: '', sortBy: 'rating', availability: 'all', department: '' })
+  const hasActiveFilters = filters.courses.length > 0 || filters.nameSearch || filters.availability !== 'all' || filters.department
 
   return (
     <PageLayout>
@@ -253,7 +305,7 @@ export default function FindConsultants() {
               className="overflow-hidden"
             >
               <div className="card p-6 shadow-neo-md mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="relative md:col-span-1">
                     <CourseSelector
                       selected={filters.courses}
@@ -261,6 +313,19 @@ export default function FindConsultants() {
                       label="Filter by courses"
                       placeholder="Any course…"
                     />
+                  </div>
+                  <div>
+                    <label className="label">Department</label>
+                    <select
+                      className="select"
+                      value={filters.department}
+                      onChange={e => setFilters(f => ({ ...f, department: e.target.value }))}
+                    >
+                      <option value="">All departments</option>
+                      {bracuDepartments.map(department => (
+                        <option key={department} value={department}>{department}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="label">Availability</label>
@@ -294,9 +359,9 @@ export default function FindConsultants() {
 
         {/* Results */}
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="card shadow-neo-md h-64 bg-neo-bg animate-pulse" />
+          <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+              <ConsultantCardSkeleton key={i} />
             ))}
           </div>
         ) : error ? (
@@ -315,9 +380,9 @@ export default function FindConsultants() {
             <p className="font-black text-xs uppercase tracking-widest text-black/50 mb-4">
               {consultants.length} consultant{consultants.length !== 1 ? 's' : ''} found
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {consultants.map((c, i) => (
-                <AnimatedSection key={c.id} delay={i * 0.04} once>
+                <AnimatedSection key={c.id} delay={i * 0.04} once className="h-full min-w-0">
                   <ConsultantCard c={c} currentUid={firebaseUser?.uid} />
                 </AnimatedSection>
               ))}

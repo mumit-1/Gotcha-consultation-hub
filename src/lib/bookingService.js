@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
+  collection, doc, getDoc, getDocs, addDoc, updateDoc,
   writeBatch, runTransaction, query, where, serverTimestamp, Timestamp,
 } from 'firebase/firestore'
 import { auth, db } from './firebase'
@@ -36,6 +36,52 @@ function fmt(ts) {
   }
 }
 
+export function getEffectiveBookingStatus(booking, now = Date.now()) {
+  if (!['ACCEPTED', 'IN_PROGRESS'].includes(booking.status)) return booking.status
+  const start = booking.startUtc?.toMillis?.() ?? new Date(booking.startUtc).getTime()
+  const end = booking.endUtc?.toMillis?.() ?? new Date(booking.endUtc).getTime()
+  if (now < start) return 'ACCEPTED'
+  if (now < end) return 'IN_PROGRESS'
+  return 'COMPLETED'
+}
+
+export async function completeBooking(bookingId) {
+  await runVerifiedWrite('complete booking and count consultant session', () =>
+    runTransaction(db, async (tx) => {
+      const bookingRef = doc(db, 'bookings', bookingId)
+      const bookingSnap = await tx.get(bookingRef)
+      if (!bookingSnap.exists()) throw new Error('Booking not found')
+      const booking = bookingSnap.data()
+      if (booking.completedCounted === true) return false
+      if (!['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'].includes(booking.status)) {
+        throw new Error('Only active or completed bookings can be counted')
+      }
+      if (booking.endUtc.toMillis() >= Date.now()) {
+        throw new Error('This consultation has not ended yet')
+      }
+
+      const consultantRef = doc(db, 'consultants', booking.consultantId)
+      const consultantSnap = await tx.get(consultantRef)
+      if (!consultantSnap.exists()) {
+        throw new Error('Consultant profile is missing; cannot count this completed session.')
+      }
+      const consultant = consultantSnap.data()
+      tx.update(bookingRef, {
+        status: 'COMPLETED',
+        completedCounted: true,
+        whatsappNumber: null,
+        updatedAt: serverTimestamp(),
+      })
+      tx.update(consultantRef, {
+        completedCount: (consultant.completedCount || 0) + 1,
+        lastCompletedBookingId: bookingId,
+        updatedAt: serverTimestamp(),
+      })
+      return true
+    }),
+  )
+}
+
 // ─── createBooking ─────────────────────────────────────────────────────────
 
 export async function createBooking({
@@ -58,7 +104,7 @@ export async function createBooking({
     }
 
     tx.set(bookingRef, {
-      consultantId, clientId, course, topic,
+      consultantId, clientId, clientName, consultantName, clientEmail, consultantEmail, course, topic,
       startUtc: Timestamp.fromDate(startUtc),
       endUtc:   Timestamp.fromDate(endUtc),
       durationMin, price,

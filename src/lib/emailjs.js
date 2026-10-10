@@ -1,5 +1,6 @@
 import emailjs from '@emailjs/browser'
 import { DHAKA_TIME_ZONE } from './dhakaTime'
+import { recordSuccessfulEmail } from './emailUsage'
 
 const SERVICE_ID  = import.meta.env.VITE_EMAILJS_SERVICE_ID
 const PUBLIC_KEY  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
@@ -19,7 +20,7 @@ function isThrottled() {
 }
 
 // Sends one email through the single template: only to_email, to_name, subject, message
-async function send({ toEmail, toName, subject, message }) {
+async function send({ toEmail, toName, subject, message, type }) {
   if (!SERVICE_ID || !PUBLIC_KEY || !TEMPLATE_ID) {
     console.warn('[EmailJS] Missing config — skipping email')
     return { skipped: true }
@@ -35,6 +36,13 @@ async function send({ toEmail, toName, subject, message }) {
       { to_email: toEmail, to_name: toName, subject, message },
       PUBLIC_KEY
     )
+    void recordSuccessfulEmail(type).catch(err => {
+      console.error('[EmailJS] Could not record successful email usage', {
+        code: err?.code || 'unknown',
+        message: err?.message || String(err),
+        type,
+      })
+    })
     return { sent: true }
   } catch (err) {
     console.error('[EmailJS] Send failed:', err)
@@ -47,6 +55,7 @@ const priceText = (price) => (price === 0 ? 'FREE' : `${price}`)
 /** Booking request submitted — notify consultant */
 export function emailBookingRequest({ consultantEmail, consultantName, clientName, course, topic, date, time, duration, price, bookingId }) {
   return send({
+    type: 'request',
     toEmail: consultantEmail,
     toName: consultantName,
     subject: 'New consultation request on Gotcha',
@@ -69,6 +78,7 @@ Open Gotcha to accept or reject this request.`,
 export function emailBookingAccepted({ clientEmail, clientName, consultantName, course, topic, date, time, duration, price, whatsapp, bookingId }) {
   const waLink = whatsapp ? `https://wa.me/${whatsapp.replace(/\D/g, '')}` : 'Contact via platform'
   return send({
+    type: 'accepted',
     toEmail: clientEmail,
     toName: clientName,
     subject: 'Your consultation is confirmed',
@@ -90,6 +100,7 @@ Contact on WhatsApp: ${waLink}`,
 /** Booking rejected — notify client */
 export function emailBookingRejected({ clientEmail, clientName, consultantName, course, date, time, bookingId }) {
   return send({
+    type: 'rejected',
     toEmail: clientEmail,
     toName: clientName,
     subject: 'Update on your consultation request',
@@ -104,6 +115,7 @@ Booking ID: ${bookingId}`,
 /** Booking cancelled — notify the other party */
 export function emailBookingCancelled({ toEmail, toName, byName, course, date, time, reason, bookingId }) {
   return send({
+    type: 'cancelled',
     toEmail,
     toName,
     subject: 'A consultation was cancelled',
@@ -118,6 +130,7 @@ Booking ID: ${bookingId}`,
 /** Auto-cancelled (expired PENDING) */
 export function emailAutoCancel({ toEmail, toName, otherName, course, date, time, bookingId }) {
   return send({
+    type: 'autoCancelled',
     toEmail,
     toName,
     subject: 'Consultation request cancelled',
@@ -132,6 +145,7 @@ Booking ID: ${bookingId}`,
 /** Session completed — request reviews */
 export function emailCompleted({ toEmail, toName, otherName, course, date, bookingId }) {
   return send({
+    type: 'completed',
     toEmail,
     toName,
     subject: 'How was your consultation? Leave a review',

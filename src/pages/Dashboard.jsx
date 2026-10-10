@@ -2,27 +2,30 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   collection, query, where, onSnapshot, orderBy,
-  getDocs, updateDoc, doc, serverTimestamp,
+  getDoc, doc,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
-import { useSweeper } from '../hooks/useSweeper'
+import { useAuth } from '../contexts/useAuth'
 import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
-import Avatar from '../components/ui/Avatar'
-import { StatusBadge, AvailabilityBadge } from '../components/ui/Badge'
+import { StatusBadge } from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import CancelBookingModal from '../components/booking/CancelBookingModal'
 import AnimatedSection from '../components/ui/AnimatedSection'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { acceptBooking, rejectBooking } from '../lib/bookingService'
 import toast from 'react-hot-toast'
 import { Clock, BookOpen, CheckCircle, XCircle, ChevronRight, Zap } from 'lucide-react'
 import { formatDhaka, isSameDhakaDate } from '../lib/dhakaTime'
+import Modal from '../components/ui/Modal'
+import { getEffectiveBookingStatus } from '../lib/bookingService'
+import ReviewModal from '../components/reviews/ReviewModal'
+import ConsultantTierBadge from '../components/ui/ConsultantTierBadge'
 
 function BookingRow({ booking, onAccept, onReject, onRequestCancel, currentUid }) {
   const [acting, setActing] = useState(false)
   const isConsultant = booking.consultantId === currentUid
+  const status = getEffectiveBookingStatus(booking)
   const start = booking.startUtc?.toDate?.() ?? new Date(booking.startUtc)
 
   const act = async (fn, ...args) => {
@@ -41,7 +44,7 @@ function BookingRow({ booking, onAccept, onReject, onRequestCancel, currentUid }
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2 mb-1">
           <span className="badge badge-muted text-[10px]">{booking.course}</span>
-          <StatusBadge status={booking.status} />
+          <StatusBadge status={status} />
         </div>
         <p className="font-bold text-sm truncate">{booking.topic}</p>
         <p className="font-bold text-xs text-black/50 mt-0.5">
@@ -87,11 +90,26 @@ function BookingRow({ booking, onAccept, onReject, onRequestCancel, currentUid }
 }
 
 export default function Dashboard() {
-  useSweeper()
-  const { firebaseUser, userDoc } = useAuth()
+  const { firebaseUser, userDoc, resendVerification, resendCooldown } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const signupEmail = location.state?.verificationEmailSent
   const [bookings, setBookings]   = useState([])
   const [cancelTarget, setCancelTarget] = useState(null)
+  const [dismissedReviewIds, setDismissedReviewIds] = useState([])
+  const [consultantProfile, setConsultantProfile] = useState(null)
+  const [resendingVerification, setResendingVerification] = useState(false)
   const [loading, setLoading]     = useState(true)
+  const [now, setNow] = useState(0)
+
+  useEffect(() => {
+    const firstTick = setTimeout(() => setNow(Date.now()), 0)
+    const interval = setInterval(() => setNow(Date.now()), 60_000)
+    return () => {
+      clearTimeout(firstTick)
+      clearInterval(interval)
+    }
+  }, [])
 
   // Listen to user's own bookings (onSnapshot on small personal set — safe)
   useEffect(() => {
@@ -126,14 +144,70 @@ export default function Dashboard() {
     return () => { u1(); u2() }
   }, [firebaseUser])
 
+  useEffect(() => {
+    if (!firebaseUser || !userDoc?.isConsultant) {
+      return
+    }
+    getDoc(doc(db, 'consultants', firebaseUser.uid)).then(snap => {
+      setConsultantProfile(snap.exists() ? snap.data() : null)
+    }).catch(error => {
+      console.error('[Dashboard] Could not load consultant profile for badge', error)
+    })
+  }, [firebaseUser, userDoc?.isConsultant])
+
   // Partition bookings
-  const now = Date.now()
   const todayBookings    = bookings.filter(b => b.startUtc && isSameDhakaDate(b.startUtc.toDate(), new Date(now)))
-  const upcomingBookings = bookings.filter(b => b.startUtc && !isSameDhakaDate(b.startUtc.toDate(), new Date(now)) && b.startUtc.toMillis() > now && ['PENDING','ACCEPTED'].includes(b.status))
+  const upcomingBookings = bookings.filter(b => b.startUtc && !isSameDhakaDate(b.startUtc.toDate(), new Date(now)) && b.startUtc.toMillis() > now && ['PENDING','ACCEPTED'].includes(getEffectiveBookingStatus(b, now)))
   const pendingRequests  = bookings.filter(b => b.status === 'PENDING' && b.consultantId === firebaseUser?.uid)
+  const reviewPrompt = bookings.find(booking => {
+    const completed = getEffectiveBookingStatus(booking, now) === 'COMPLETED'
+    const ownReview = booking.consultantId === firebaseUser?.uid
+      ? booking.consultantReview
+      : booking.clientReview
+    return completed && !ownReview && !dismissedReviewIds.includes(booking.id)
+  })
+  const activeReviewTarget = reviewPrompt
+
+  const closeVerificationNotice = () => {
+    navigate(location.pathname, { replace: true, state: null })
+  }
+
+  const resendSignupVerification = async () => {
+    setResendingVerification(true)
+    try {
+      await resendVerification()
+      toast.success('Verification email sent. Check your inbox and spam folder.')
+    } catch (error) {
+      toast.error(`Could not resend verification email: ${error.message}`)
+    } finally {
+      setResendingVerification(false)
+    }
+  }
 
   return (
     <PageLayout>
+      <Modal open={Boolean(signupEmail)} onClose={closeVerificationNotice} title="Verify your email">
+        <div className="space-y-4">
+          <p className="font-bold">
+            Verification email sent to <strong>{signupEmail}</strong>. Check your inbox and your SPAM folder.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              full
+              disabled={resendingVerification || resendCooldown > 0}
+              loading={resendingVerification}
+              onClick={resendSignupVerification}
+            >
+              {resendCooldown > 0
+                ? `Resend in ${resendCooldown}s`
+                : 'Resend'}
+            </Button>
+            <Button type="button" variant="primary" full onClick={closeVerificationNotice}>OK</Button>
+          </div>
+        </div>
+      </Modal>
       <EmailVerificationBanner />
       <div className="page-container py-10">
         {/* Header */}
@@ -153,9 +227,13 @@ export default function Dashboard() {
             <div className="flex gap-3">
               <Link to="/find" className="btn btn-secondary btn-sm">Find Help</Link>
               {userDoc?.isConsultant
-                ? <Link to="/availability" className="btn btn-outline btn-sm">Edit Availability</Link>
+                ? <>
+                    <Link to="/become-consultant" className="btn btn-outline btn-sm">Consultant Profile</Link>
+                    <Link to="/availability" className="btn btn-outline btn-sm">Manage availability</Link>
+                  </>
                 : <Link to="/become-consultant" className="btn btn-outline btn-sm">Become Consultant</Link>
               }
+              {userDoc?.isConsultant && consultantProfile && <ConsultantTierBadge completedCount={consultantProfile.completedCount || 0} />}
             </div>
           </div>
         </AnimatedSection>
@@ -250,6 +328,15 @@ export default function Dashboard() {
         currentUid={firebaseUser.uid}
         onClose={() => setCancelTarget(null)}
       />
+      {!signupEmail && activeReviewTarget && (
+        <ReviewModal
+          booking={activeReviewTarget}
+          currentUid={firebaseUser.uid}
+          onClose={() => {
+            setDismissedReviewIds(ids => [...ids, activeReviewTarget.id])
+          }}
+        />
+      )}
     </PageLayout>
   )
 }

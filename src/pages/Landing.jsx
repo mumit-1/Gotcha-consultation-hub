@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '../contexts/useAuth'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Star, Zap, BookOpen, Users, ShieldCheck, Clock } from 'lucide-react'
@@ -77,6 +78,7 @@ const MARQUEE_TAGS = [
 ]
 
 export default function Landing() {
+  const { userDoc } = useAuth()
   return (
     <PageLayout>
       {/* ── Hero ─────────────────────────────────────────────────────── */}
@@ -292,7 +294,7 @@ export default function Landing() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/become-consultant" className="btn bg-neo-secondary text-black border-4 border-white shadow-neo-white btn-lg hover:bg-yellow-300">
-                Become a Consultant
+                {userDoc?.isConsultant ? 'Update Consultancy Profile' : 'Become a Consultant'}
               </Link>
               <Link to="/find" className="btn bg-transparent text-white border-4 border-white hover:bg-white hover:text-black btn-lg">
                 Find Help Instead

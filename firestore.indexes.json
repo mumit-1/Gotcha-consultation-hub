@@ -5,6 +5,112 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "clientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "consultantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "clientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "consultantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "clientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "consultantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "clientId",
           "order": "ASCENDING"
         },
@@ -34,6 +140,102 @@
       "fields": [
         {
           "fieldPath": "consultantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "targetId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "email", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "consultants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "department", "order": "ASCENDING" },
+        { "fieldPath": "ratingSum", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "consultants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "department", "order": "ASCENDING" },
+        { "fieldPath": "price30min", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "consultants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courses", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "ratingSum", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "consultants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courses", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "price30min", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "consultants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courses", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "department", "order": "ASCENDING" },
+        { "fieldPath": "ratingSum", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "consultants",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courses", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "department", "order": "ASCENDING" },
+        { "fieldPath": "price30min", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {

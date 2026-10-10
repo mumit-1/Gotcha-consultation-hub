@@ -1,9 +1,8 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Camera, X } from 'lucide-react'
+import { Camera } from 'lucide-react'
 import { uploadImage } from '../../lib/cloudinary'
 import Avatar from '../ui/Avatar'
-import Button from '../ui/Button'
 import toast from 'react-hot-toast'
 
 export default function PhotoUpload({ currentUrl, name, onUpload }) {
@@ -23,11 +22,11 @@ export default function PhotoUpload({ currentUrl, name, onUpload }) {
     setUploading(true)
     try {
       const url = await uploadImage(file, 'avatars')
-      onUpload(url)
+      await onUpload(url)
       setPreview(null)
       toast.success('Photo updated!')
     } catch (err) {
-      toast.error('Upload failed: ' + err.message)
+      toast.error('Could not update photo: ' + err.message)
       setPreview(null)
     } finally {
       setUploading(false)
@@ -60,7 +59,12 @@ export default function PhotoUpload({ currentUrl, name, onUpload }) {
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={e => handleFile(e.target.files?.[0])}
+        onChange={e => {
+          const input = e.currentTarget
+          const file = input.files?.[0]
+          input.value = ''
+          void handleFile(file)
+        }}
       />
 
       <p className="font-bold text-xs text-black/50 uppercase tracking-wide text-center">

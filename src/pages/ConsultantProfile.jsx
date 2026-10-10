@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { doc, getDoc, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import Avatar from '../components/ui/Avatar'
@@ -12,6 +12,7 @@ import { computeDhakaAvailabilityStatus, formatDhaka } from '../lib/dhakaTime'
 import AnimatedSection from '../components/ui/AnimatedSection'
 import { Star, MessageCircle, BookOpen, Award, ChevronRight } from 'lucide-react'
 import ReportModal from '../components/reports/ReportModal'
+import ConsultantTierBadge from '../components/ui/ConsultantTierBadge'
 
 function StarRatingDisplay({ rating, count }) {
   const rounded = Math.round(rating * 2) / 2
@@ -33,7 +34,7 @@ function StarRatingDisplay({ rating, count }) {
 
 export default function ConsultantProfile() {
   const { uid }                 = useParams()
-  const { firebaseUser, userDoc, isVerified } = useAuth()
+  const { firebaseUser } = useAuth()
   const [consultant, setConsultant] = useState(null)
   const [reviews, setReviews]   = useState([])
   const [loading, setLoading]   = useState(true)
@@ -60,12 +61,13 @@ export default function ConsultantProfile() {
             collection(db, 'bookings'),
             where('clientId', '==', firebaseUser.uid),
             where('consultantId', '==', uid),
-            where('status', '==', 'ACCEPTED')
+            where('status', 'in', ['ACCEPTED', 'IN_PROGRESS'])
           )
         )
-        if (!bSnap.empty) {
-          setWhatsapp(bSnap.docs[0].data().whatsappNumber || '')
-        }
+        const activeBooking = bSnap.docs
+          .map(item => item.data())
+          .find(booking => booking.endUtc?.toMillis?.() > Date.now())
+        if (activeBooking) setWhatsapp(activeBooking.whatsappNumber || '')
       }
 
       setLoading(false)
@@ -104,6 +106,7 @@ export default function ConsultantProfile() {
                   </span>
                 )}
                 <AvailabilityBadge status={computeDhakaAvailabilityStatus(consultant)} />
+                {consultant.department && <span className="badge badge-muted">{consultant.department}</span>}
               </div>
 
               {rating && <div className="mb-3"><StarRatingDisplay rating={rating} count={consultant.ratingCount} /></div>}
@@ -113,6 +116,7 @@ export default function ConsultantProfile() {
               )}
 
               <div className="flex flex-wrap gap-3">
+                <ConsultantTierBadge completedCount={consultant.completedCount || 0} />
                 <div className={`badge text-base font-black ${isFree ? 'badge-green' : 'badge-yellow'}`}>
                   {isFree ? '★ FREE' : `From ${consultant.price30min}`}
                 </div>

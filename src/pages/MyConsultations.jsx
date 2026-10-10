@@ -2,18 +2,16 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   collection, query, where, onSnapshot, orderBy, limit,
-  updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
-import { useSweeper } from '../hooks/useSweeper'
+import { useAuth } from '../contexts/useAuth'
 import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
 import { StatusBadge } from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import CancelBookingModal from '../components/booking/CancelBookingModal'
 // import AnimatedSection from '../components/ui/AnimatedSection'
-import { acceptBooking, rejectBooking } from '../lib/bookingService'
+import { acceptBooking, rejectBooking, getEffectiveBookingStatus } from '../lib/bookingService'
 import ReviewModal from '../components/reviews/ReviewModal'
 import toast from 'react-hot-toast'
 import { CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
@@ -23,8 +21,9 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
   const [expanded, setExpanded] = useState(false)
   const [acting, setActing]     = useState(false)
   const isConsultant = b.consultantId === currentUid
+  const status = getEffectiveBookingStatus(b)
   const start = b.startUtc?.toDate?.() ?? new Date(b.startUtc)
-  const canReview = b.status === 'COMPLETED' && (
+  const canReview = status === 'COMPLETED' && (
     isConsultant ? !b.consultantReview : !b.clientReview
   )
 
@@ -46,7 +45,7 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="badge badge-muted text-[10px]">{b.course}</span>
-            <StatusBadge status={b.status} />
+            <StatusBadge status={status} />
           </div>
           <p className="font-bold text-sm truncate">{b.topic}</p>
           <p className="font-bold text-xs text-black/50">
@@ -86,7 +85,7 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
                     <p className="font-bold">{b.cancelReason}</p>
                   </div>
                 )}
-                {b.whatsappNumber && (
+                {b.whatsappNumber && ['ACCEPTED', 'IN_PROGRESS'].includes(status) && (
                   <div className="col-span-2">
                     <p className="font-black text-xs uppercase text-black/50">WhatsApp</p>
                     <a
@@ -102,7 +101,7 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {isConsultant && b.status === 'PENDING' && (
+                {isConsultant && status === 'PENDING' && (
                   <>
                     <Button size="sm" variant="primary" loading={acting}
                       onClick={() => act(acceptBooking, b.id)}
@@ -116,7 +115,7 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
                     </Button>
                   </>
                 )}
-                {['PENDING','ACCEPTED'].includes(b.status) && (
+                {['PENDING','ACCEPTED'].includes(status) && (
                   <Button size="sm" variant="outline" loading={acting}
                     onClick={() => onRequestCancel(b)}
                   >
@@ -126,20 +125,6 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
                 {canReview && (
                   <Button size="sm" variant="secondary" onClick={() => onReview(b)}>
                     Leave Review ★
-                  </Button>
-                )}
-                {isConsultant && b.status === 'ACCEPTED' && (
-                  <Button size="sm" variant="outline"
-                    onClick={() => {
-                      const nowMs = Date.now()
-                      if (nowMs >= b.endUtc.toMillis()) {
-                        updateDoc(doc(db, 'bookings', b.id), { status: 'COMPLETED', updatedAt: serverTimestamp() })
-                      } else if (nowMs >= b.startUtc.toMillis()) {
-                        updateDoc(doc(db, 'bookings', b.id), { status: 'IN_PROGRESS', updatedAt: serverTimestamp() })
-                      }
-                    }}
-                  >
-                    Mark No-Show
                   </Button>
                 )}
               </div>
@@ -152,7 +137,6 @@ function BookingCard({ b, currentUid, onReview, onRequestCancel }) {
 }
 
 export default function MyConsultations() {
-  useSweeper()
   const { firebaseUser } = useAuth()
   const [bookings, setBookings] = useState([])
   const [loading, setLoading]   = useState(true)
@@ -179,7 +163,9 @@ export default function MyConsultations() {
   }, [firebaseUser])
 
   const FILTERS = ['all', 'PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'REJECTED']
-  const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter)
+  const filtered = filter === 'all'
+    ? bookings
+    : bookings.filter(b => getEffectiveBookingStatus(b) === filter)
 
   return (
     <PageLayout>

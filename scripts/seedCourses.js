@@ -16,6 +16,7 @@
 
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
+import process from 'node:process'
 import { COURSES } from '../src/data/courses.js'
 
 // Set your service account key path

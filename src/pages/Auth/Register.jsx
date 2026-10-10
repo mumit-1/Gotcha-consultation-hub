@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth'
 import { auth } from '../../lib/firebase'
+import { ensureUserDoc } from '../../lib/verifiedWrites'
+import { useAuth } from '../../contexts/useAuth'
 import PageLayout from '../../components/layout/PageLayout'
 import Input from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
@@ -17,6 +19,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const [showPw, setShowPw]   = useState(false)
   const navigate              = useNavigate()
+  const { startResendCooldown } = useAuth()
 
   const validate = () => {
     const e = {}
@@ -37,9 +40,13 @@ export default function Register() {
     try {
       const cred = await createUserWithEmailAndPassword(auth, form.email.trim(), form.password)
       await updateProfile(cred.user, { displayName: form.name.trim() })
+      await ensureUserDoc(cred.user)
       await sendEmailVerification(cred.user)
-      toast.success('Account created! Check your email to verify.')
-      navigate('/dashboard')
+      startResendCooldown()
+      navigate('/dashboard', {
+        replace: true,
+        state: { verificationEmailSent: cred.user.email },
+      })
     } catch (err) {
       const msg = err.code === 'auth/email-already-in-use'
         ? 'This email is already registered.'

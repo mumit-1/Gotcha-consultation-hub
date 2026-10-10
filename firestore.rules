@@ -23,6 +23,14 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
     }
 
+    function validDepartment(department) {
+      return department is string &&
+        department in [
+          'CSE', 'CS', 'EEE', 'ECE', 'BBA', 'ARC', 'APE', 'BIO',
+          'MIC', 'PHR', 'ECO', 'ANT', 'ENG', 'MAT', 'PHY', 'LLB'
+        ];
+    }
+
     function validCancellation() {
       return signedIn() &&
         request.auth.uid in [resource.data.clientId, resource.data.consultantId] &&
@@ -111,6 +119,50 @@ service cloud.firestore {
           request.resource.data.ratingSum - resource.data.get('ratingSum', 0);
     }
 
+    function validCompletionCountUpdate(consultantId) {
+      let bookingId = request.resource.data.lastCompletedBookingId;
+      let bookingPath = /databases/$(database)/documents/bookings/$(bookingId);
+      return verified() && activeUser() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['completedCount', 'lastCompletedBookingId', 'updatedAt']) &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.completedCount == resource.data.get('completedCount', 0) + 1 &&
+        bookingId is string &&
+        exists(bookingPath) &&
+        !get(bookingPath).data.get('completedCounted', false) &&
+        existsAfter(bookingPath) &&
+        getAfter(bookingPath).data.consultantId == consultantId &&
+        getAfter(bookingPath).data.status == 'COMPLETED' &&
+        getAfter(bookingPath).data.completedCounted == true &&
+        getAfter(bookingPath).data.endUtc < request.time &&
+        request.auth.uid in [
+          getAfter(bookingPath).data.clientId,
+          getAfter(bookingPath).data.consultantId
+        ];
+    }
+
+    function validBookingCompletion(bookingId) {
+      let consultantId = resource.data.consultantId;
+      let consultantPath = /databases/$(database)/documents/consultants/$(consultantId);
+      return verified() && activeUser() &&
+        request.auth.uid in [resource.data.clientId, consultantId] &&
+        resource.data.status in ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED'] &&
+        request.resource.data.status == 'COMPLETED' &&
+        request.time > resource.data.endUtc &&
+        (!resource.data.keys().hasAny(['completedCounted']) ||
+          resource.data.completedCounted != true) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'whatsappNumber', 'completedCounted', 'updatedAt']) &&
+        request.resource.data.whatsappNumber == null &&
+        request.resource.data.completedCounted == true &&
+        request.resource.data.updatedAt == request.time &&
+        exists(consultantPath) &&
+        existsAfter(consultantPath) &&
+        getAfter(consultantPath).data.lastCompletedBookingId == bookingId &&
+        getAfter(consultantPath).data.completedCount ==
+          get(consultantPath).data.get('completedCount', 0) + 1;
+    }
+
     function validClientReviewWrite(reviewId, review) {
       let bookingPath = /databases/$(database)/documents/bookings/$(reviewId);
       return verified() && activeUser() &&
@@ -153,6 +205,67 @@ service cloud.firestore {
           request.resource.data.get(reviewerField, null);
     }
 
+    function emailUsageKeys() {
+      return [
+        'count', 'sent_request', 'sent_accepted', 'sent_rejected',
+        'sent_cancelled', 'sent_autoCancelled', 'sent_completed', 'updatedAt'
+      ];
+    }
+
+    function validEmailUsageCreateFor(typeField) {
+      return request.resource.data.keys().hasOnly(emailUsageKeys()) &&
+        request.resource.data.keys().hasAll(['count', 'updatedAt']) &&
+        request.resource.data.keys().size() == 3 &&
+        request.resource.data.count == 1 &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.get('sent_request', 0) == (typeField == 'sent_request' ? 1 : 0) &&
+        request.resource.data.get('sent_accepted', 0) == (typeField == 'sent_accepted' ? 1 : 0) &&
+        request.resource.data.get('sent_rejected', 0) == (typeField == 'sent_rejected' ? 1 : 0) &&
+        request.resource.data.get('sent_cancelled', 0) == (typeField == 'sent_cancelled' ? 1 : 0) &&
+        request.resource.data.get('sent_autoCancelled', 0) == (typeField == 'sent_autoCancelled' ? 1 : 0) &&
+        request.resource.data.get('sent_completed', 0) == (typeField == 'sent_completed' ? 1 : 0);
+    }
+
+    function validEmailUsageUpdateFor(typeField) {
+      return request.resource.data.keys().hasOnly(emailUsageKeys()) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(emailUsageKeys()) &&
+        request.resource.data.count == resource.data.get('count', 0) + 1 &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.get('sent_request', 0) ==
+          resource.data.get('sent_request', 0) + (typeField == 'sent_request' ? 1 : 0) &&
+        request.resource.data.get('sent_accepted', 0) ==
+          resource.data.get('sent_accepted', 0) + (typeField == 'sent_accepted' ? 1 : 0) &&
+        request.resource.data.get('sent_rejected', 0) ==
+          resource.data.get('sent_rejected', 0) + (typeField == 'sent_rejected' ? 1 : 0) &&
+        request.resource.data.get('sent_cancelled', 0) ==
+          resource.data.get('sent_cancelled', 0) + (typeField == 'sent_cancelled' ? 1 : 0) &&
+        request.resource.data.get('sent_autoCancelled', 0) ==
+          resource.data.get('sent_autoCancelled', 0) + (typeField == 'sent_autoCancelled' ? 1 : 0) &&
+        request.resource.data.get('sent_completed', 0) ==
+          resource.data.get('sent_completed', 0) + (typeField == 'sent_completed' ? 1 : 0);
+    }
+
+    function validEmailUsageCreate(period) {
+      return period.matches('^[0-9]{4}-[0-9]{2}$') &&
+        (validEmailUsageCreateFor('sent_request') ||
+         validEmailUsageCreateFor('sent_accepted') ||
+         validEmailUsageCreateFor('sent_rejected') ||
+         validEmailUsageCreateFor('sent_cancelled') ||
+         validEmailUsageCreateFor('sent_autoCancelled') ||
+         validEmailUsageCreateFor('sent_completed'));
+    }
+
+    function validEmailUsageUpdate(period) {
+      return period.matches('^[0-9]{4}-[0-9]{2}$') &&
+        (validEmailUsageUpdateFor('sent_request') ||
+         validEmailUsageUpdateFor('sent_accepted') ||
+         validEmailUsageUpdateFor('sent_rejected') ||
+         validEmailUsageUpdateFor('sent_cancelled') ||
+         validEmailUsageUpdateFor('sent_autoCancelled') ||
+         validEmailUsageUpdateFor('sent_completed'));
+    }
+
     match /admins/{uid} {
       allow get: if isOwner(uid) || isAdmin();
       allow list, create, update, delete: if false;
@@ -163,13 +276,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /emailUsage/{period} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() || (verified() && validEmailUsageCreate(period));
+      allow update: if isAdmin() || (verified() && validEmailUsageUpdate(period));
+      allow delete: if isAdmin();
+    }
+
     match /users/{uid} {
       allow get: if signedIn();
       allow list: if isAdmin();
       allow create: if isOwner(uid) &&
         request.resource.data.keys().hasOnly([
           'uid', 'name', 'email', 'photoURL', 'bio', 'timezone',
-          'status', 'isConsultant', 'blockedUsers', 'createdAt', 'updatedAt'
+          'status', 'isConsultant', 'blockedUsers', 'department', 'createdAt', 'updatedAt'
         ]) &&
         request.resource.data.keys().hasAll([
           'uid', 'name', 'email', 'status', 'isConsultant', 'createdAt', 'updatedAt'
@@ -178,21 +298,36 @@ service cloud.firestore {
         request.resource.data.email == request.auth.token.email &&
         request.auth.token.email.matches('^[A-Za-z0-9._%+-]+@g\\.bracu\\.ac\\.bd$') &&
         request.resource.data.status == 'active' &&
-        request.resource.data.isConsultant == false;
+        request.resource.data.isConsultant == false &&
+        (!request.resource.data.keys().hasAny(['department']) ||
+          validDepartment(request.resource.data.department));
       allow update: if (isAdmin() &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['status', 'updatedAt']) &&
           request.resource.data.status in ['active', 'suspended', 'banned']) ||
         (isOwner(uid) && activeUser() &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['name', 'bio', 'timezone', 'photoURL', 'isConsultant', 'blockedUsers', 'updatedAt']) &&
+            .hasOnly(['name', 'bio', 'timezone', 'photoURL', 'department', 'isConsultant', 'blockedUsers', 'updatedAt']) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['department']) ||
+            (validDepartment(request.resource.data.department) &&
+             request.resource.data.isConsultant == true &&
+             existsAfter(/databases/$(database)/documents/consultants/$(uid)) &&
+             getAfter(/databases/$(database)/documents/consultants/$(uid)).data.department ==
+               request.resource.data.department)) &&
           (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isConsultant']) ||
             (request.resource.data.isConsultant == true &&
-             existsAfter(/databases/$(database)/documents/consultants/$(uid)))));
-      allow delete: if isAdmin();
+             existsAfter(/databases/$(database)/documents/consultants/$(uid)) &&
+             getAfter(/databases/$(database)/documents/consultants/$(uid)).data.department ==
+               request.resource.data.department) ||
+            (request.resource.data.isConsultant == false &&
+             !existsAfter(/databases/$(database)/documents/consultants/$(uid)))));
+      allow delete: if isAdmin() ||
+        (isOwner(uid) &&
+         !existsAfter(/databases/$(database)/documents/consultants/$(uid)) &&
+         !existsAfter(/databases/$(database)/documents/users/$(uid)/private/contact));
 
       match /private/{doc} {
-        allow read, write: if isOwner(uid);
+        allow read, write, delete: if isOwner(uid);
       }
     }
 
@@ -200,6 +335,11 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isOwner(id) && verified() && activeUser() &&
         request.resource.data.uid == id &&
+        validDepartment(request.resource.data.department) &&
+        existsAfter(/databases/$(database)/documents/users/$(id)) &&
+        getAfter(/databases/$(database)/documents/users/$(id)).data.isConsultant == true &&
+        getAfter(/databases/$(database)/documents/users/$(id)).data.department ==
+          request.resource.data.department &&
         validCourses(request.resource.data.courses) &&
         request.resource.data.price30min is number &&
         request.resource.data.price30min >= 0 &&
@@ -213,7 +353,7 @@ service cloud.firestore {
         request.resource.data.createdAt == request.time &&
         request.resource.data.updatedAt == request.time &&
         request.resource.data.keys().hasOnly([
-          'uid', 'name', 'photoURL', 'bio', 'skills', 'experience', 'courses',
+          'uid', 'name', 'photoURL', 'bio', 'skills', 'experience', 'courses', 'department',
           'price30min', 'priceExtra30min', 'ratingSum', 'ratingCount',
           'completedCount', 'isVerified', 'manualBusy', 'availability',
           'createdAt', 'updatedAt'
@@ -223,20 +363,28 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly([
               'name', 'photoURL', 'bio', 'skills', 'experience', 'courses',
-              'price30min', 'priceExtra30min', 'manualBusy', 'availability',
+              'price30min', 'priceExtra30min', 'manualBusy', 'availability', 'department',
               'updatedAt'
             ]) &&
+          validDepartment(request.resource.data.department) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['department']) ||
+            getAfter(/databases/$(database)/documents/users/$(id)).data.department ==
+              request.resource.data.department) &&
           validCourses(request.resource.data.courses) &&
           request.resource.data.price30min is number &&
           request.resource.data.price30min >= 0 &&
           request.resource.data.priceExtra30min is number &&
           request.resource.data.priceExtra30min >= 0 &&
           request.resource.data.updatedAt == request.time) ||
-        validRatingIncrement(id);
-      allow delete: if isAdmin();
+        validRatingIncrement(id) ||
+        validCompletionCountUpdate(id);
+      allow delete: if isAdmin() ||
+        (isOwner(id) && verified() && activeUser() &&
+         !existsAfter(/databases/$(database)/documents/consultants/$(id)) &&
+         getAfter(/databases/$(database)/documents/users/$(id)).data.isConsultant == false);
 
       match /private/{doc} {
-        allow read, write: if isOwner(id) || isAdmin();
+        allow read, write, delete: if isOwner(id) || isAdmin();
       }
     }
 
@@ -249,6 +397,10 @@ service cloud.firestore {
         request.resource.data.clientId == request.auth.uid &&
         request.resource.data.consultantId is string &&
         request.resource.data.clientId != request.resource.data.consultantId &&
+        request.resource.data.clientName is string &&
+        request.resource.data.consultantName is string &&
+        request.resource.data.clientEmail is string &&
+        request.resource.data.consultantEmail is string &&
         request.resource.data.status == 'PENDING' &&
         request.resource.data.startUtc is timestamp &&
         request.resource.data.startUtc > request.time &&
@@ -273,7 +425,8 @@ service cloud.firestore {
         request.resource.data.topic.size() <= 1000 &&
         request.resource.data.keys().hasOnly([
           'consultantId', 'clientId', 'course', 'topic', 'startUtc', 'endUtc',
-          'durationMin', 'price', 'status', 'whatsappNumber', 'cancelledBy',
+          'durationMin', 'price', 'status', 'whatsappNumber', 'clientName',
+          'consultantName', 'clientEmail', 'consultantEmail', 'cancelledBy',
           'cancelReason', 'cancelledAt', 'clientRating', 'consultantRating',
           'createdAt', 'updatedAt'
         ]) &&
@@ -302,18 +455,12 @@ service cloud.firestore {
         (signedIn() && activeUser() &&
           resource.data.consultantId == request.auth.uid &&
           resource.data.status == 'ACCEPTED' &&
-          request.resource.data.status in ['IN_PROGRESS', 'COMPLETED'] &&
+          request.resource.data.status == 'IN_PROGRESS' &&
+          request.time >= resource.data.startUtc &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['status', 'updatedAt']) &&
           request.resource.data.updatedAt == request.time) ||
-        (signedIn() && activeUser() &&
-          request.auth.uid in [resource.data.clientId, resource.data.consultantId] &&
-          resource.data.status in ['ACCEPTED', 'IN_PROGRESS'] &&
-          request.resource.data.status == 'COMPLETED' &&
-          request.time > resource.data.endUtc &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'updatedAt']) &&
-          request.resource.data.updatedAt == request.time) ||
+        validBookingCompletion(id) ||
         validBookingReviewUpdate(id, 'clientReview') ||
         validBookingReviewUpdate(id, 'consultantReview') ||
         validCancellation();
@@ -347,7 +494,7 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if signedIn() &&
         exists(/databases/$(database)/documents/bookings/$(resource.data.bookingId)) &&
-        get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.status == 'CANCELLED' &&
+        get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.status in ['CANCELLED', 'COMPLETED'] &&
         request.auth.uid in [
           get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.clientId,
           get(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.consultantId
@@ -421,7 +568,8 @@ service cloud.firestore {
 
     match /notifications/{uid}/items/{id} {
       allow read: if isOwner(uid);
-      allow create: if verified() &&
+      allow create: if (verified() ||
+        (request.resource.data.type == 'cancelled' && signedIn() && activeUser())) &&
         uid != request.auth.uid &&
         request.resource.data.keys().hasOnly([
           'type', 'message', 'bookingId', 'read', 'createdAt'
@@ -444,7 +592,7 @@ service cloud.firestore {
       allow update: if isOwner(uid) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
         request.resource.data.read is bool;
-      allow delete: if false;
+      allow delete: if isOwner(uid);
     }
 
     match /reports/{id} {

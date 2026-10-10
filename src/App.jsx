@@ -17,11 +17,18 @@ import MyConsultations  from './pages/MyConsultations'
 import Notifications    from './pages/Notifications'
 import Profile          from './pages/Profile'
 import AdminDashboard   from './pages/Admin/AdminDashboard'
+import { useSweeper } from './hooks/useSweeper'
+
+function AppServices() {
+  useSweeper()
+  return null
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <AppServices />
         <Routes>
           {/* Public */}
           <Route path="/"              element={<Landing />} />

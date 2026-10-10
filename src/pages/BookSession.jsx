@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../contexts/useAuth'
 import { createBooking } from '../lib/bookingService'
 import PageLayout from '../components/layout/PageLayout'
 import EmailVerificationBanner from '../components/auth/EmailVerificationBanner'
@@ -133,7 +133,7 @@ export default function BookSession() {
       })
 
       // Email consultant
-      await emailBookingRequest({
+      const emailResult = await emailBookingRequest({
         consultantEmail: cUser.email,
         consultantName: consultant.name,
         clientName: userDoc?.name || '',
@@ -146,7 +146,11 @@ export default function BookSession() {
         bookingId,
       })
 
-      toast.success('Booking request sent!')
+      if (emailResult?.skipped && emailResult.reason === 'quota') {
+        toast('Email notifications are paused. Check your dashboard.')
+      } else {
+        toast.success('Booking request sent!')
+      }
       navigate('/my-consultations')
     } catch (err) {
       toast.error(err.message || 'Booking failed')

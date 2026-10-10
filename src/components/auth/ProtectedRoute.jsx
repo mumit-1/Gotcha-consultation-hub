@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom'
-import { useAuth } from '../../contexts/AuthContext'
+import { useAuth } from '../../contexts/useAuth'
 import { PageSpinner } from '../ui/Spinner'
 
 /** Redirects to /login if not authenticated */

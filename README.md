@@ -47,6 +47,9 @@ Gotcha is a free consultation marketplace built for university students. Any ver
 | 🏠 **Dashboard**           | TODAY timeline, pending requests panel, upcoming sessions, quick navigation                                                   |
 | 🔔 **Notifications**       | Real-time in-app notification center with mark-as-read                                                                        |
 | ⭐ **Reviews**             | 1–5 star ratings + written reviews; consultant rating computed via Firestore transaction                                      |
+| 🏅 **Consultant Tiers**    | Completed-session badges; eligible completed sessions update consultant statistics exactly once                            |
+| 🎓 **Departments**          | Consultants choose a department; matching profile and discovery filters use the same validated value                         |
+| 🧹 **Account Controls**     | Profile removal and password-reauthenticated account deletion; active bookings are cancelled before profile cleanup           |
 | 🚩 **Reports & Blocks**    | 6 report types; blocked users cannot book each other                                                                          |
 | 🛡️ **Admin Panel**         | User/consultant management, report queue, booking overview, platform settings                                                 |
 | 🎨 **Neo-Brutalism UI**    | Space Grotesk font, hard black borders, offset solid shadows, Framer Motion animations                                        |
@@ -170,12 +173,7 @@ VITE_CLOUDINARY_UPLOAD_PRESET=   # must be an UNSIGNED preset
 # EmailJS
 VITE_EMAILJS_SERVICE_ID=
 VITE_EMAILJS_PUBLIC_KEY=
-VITE_EMAILJS_TEMPLATE_REQUEST=
-VITE_EMAILJS_TEMPLATE_ACCEPTED=
-VITE_EMAILJS_TEMPLATE_REJECTED=
-VITE_EMAILJS_TEMPLATE_CANCELLED=
-VITE_EMAILJS_TEMPLATE_AUTOCANCELLED=
-VITE_EMAILJS_TEMPLATE_COMPLETED=
+VITE_EMAILJS_TEMPLATE_ID=
 ```
 
 ### 3. Firebase Setup
@@ -191,7 +189,7 @@ npx firebase login
 npx firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-The Firestore rules restrict booking changes to valid participant transitions, keep contact records owner-only, and only allow a completed booking to be reviewed once by each participant. Admin access is granted by creating an `admins/{uid}` document outside the client app.
+The Firestore rules restrict booking changes to valid participant transitions, keep contact records owner-only, and only allow a completed booking to be reviewed once by each participant. Admin access is granted by creating an `admins/{uid}` document outside the client app. The browser-side sweeper listens only to the signed-in user's relevant bookings and checks end times locally; it does not refetch bookings on a timer.
 
 ### 4. Course List
 
@@ -246,27 +244,39 @@ Gotcha has **no server**. All security is enforced in Firestore rules:
 | Rule                         | Description                                                                           |
 | ---------------------------- | ------------------------------------------------------------------------------------- |
 | `email_verified`             | Unverified users cannot create bookings or consultant profiles                        |
+| `emailUsage/{period}`         | Admin-only reads; verified users can only increment the total and one email-type counter |
 | `notSuspended()`             | Suspended/banned users are blocked from all writes                                    |
-| Local course catalog         | Consultant course choices come from `src/data/courses.js`; no Firestore seed required |
+| Course catalog               | Consultant course choices must be in `config/courses.codes`, seeded from `src/data/courses.js` by an admin |
 | Slot lock `create-if-absent` | Prevents double-acceptance of overlapping bookings                                    |
 | Booking participant check    | Only the two participants can read/update a booking                                   |
 | Admin collection             | `admins/{uid}` existence check; write is `false` (console only)                       |
-| Protected fields             | Users cannot write their own `status`, `ratingSum`, `isVerified`, or `isConsultant`   |
+| Protected fields             | Users cannot write their own `status`, `ratingSum`, or `isVerified`; consultant role changes require a matching consultant record |
 
 ---
 
-## 📧 EmailJS Templates
+## 📧 EmailJS Template and Usage
 
-Create 6 templates in EmailJS. Each template must include the variable names below (wrap in `{{double_braces}}`):
+The app sends all six email types through one EmailJS template. The template receives `to_email`, `to_name`, `subject`, and `message`. Successful EmailJS sends are counted in `emailUsage/{YYYY-MM}` and shown under Admin → Settings. The monthly limit defaults to 200 and the reset day defaults to 1; admins can adjust both in the usage card.
 
-| Template Env Var         | Key Variables                                                                                                                   |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `TEMPLATE_REQUEST`       | `to_email`, `to_name`, `from_name`, `course`, `topic`, `date`, `time`, `duration`, `price`, `booking_id`                        |
-| `TEMPLATE_ACCEPTED`      | `to_email`, `to_name`, `consultant_name`, `course`, `topic`, `date`, `time`, `duration`, `price`, `whatsapp_link`, `booking_id` |
-| `TEMPLATE_REJECTED`      | `to_email`, `to_name`, `consultant_name`, `course`, `date`, `time`, `booking_id`                                                |
-| `TEMPLATE_CANCELLED`     | `to_email`, `to_name`, `cancelled_by`, `course`, `date`, `time`, `reason`, `booking_id`                                         |
-| `TEMPLATE_AUTOCANCELLED` | `to_email`, `to_name`, `other_name`, `course`, `date`, `time`, `reason`, `booking_id`                                           |
-| `TEMPLATE_COMPLETED`     | `to_email`, `to_name`, `other_name`, `course`, `date`, `booking_id`                                                             |
+The counter is best-effort and is an estimate; verify the exact usage in the EmailJS dashboard. Because usage documents are admin-readable only, the app does not enforce a global pre-send quota guard. The admin card shows threshold warnings but does not pause sending.
+
+---
+
+## 👤 Profile, Department, and Session Lifecycle
+
+Consultant profiles require a valid department from `src/constants/departments.js`. Firestore rules require the user's department and consultant profile department to match. Editing both records is performed together, and the central list is the source of allowed department values.
+
+When an accepted booking ends, the app derives its completed state from the booking times and records completion once, updating the consultant's completed-session count for tier badges. Clients can submit one review per completed session; consultants can report a review. WhatsApp details are available only to booking participants while an accepted session is still active.
+
+Users can remove a consultant profile without deleting their account. Permanent account deletion requires password reauthentication and typed `DELETE` confirmation. The app attempts to cancel outstanding bookings and notify the other participants before deleting profile data and Firebase Authentication. If a Firestore operation fails, deletion stops and reports the error; as with any multi-request browser workflow, a network failure can occur after an earlier cancellation has committed.
+
+The Admin → Users page shows registered-user and consultant totals using Firestore count aggregations; it does not fetch the full collections for those totals. The navigation switches to its compact menu below 1280px, and consultant availability is managed from the dashboard.
+
+After changing Firestore rules or indexes, publish/deploy them before testing:
+
+```bash
+npx firebase deploy --only firestore:rules,firestore:indexes
+```
 
 ---
 
@@ -294,7 +304,7 @@ config/settings                 Platform settings
 | ---------------- | ------------------ | ------------------------------------------------ |
 | Firestore reads  | 50K/day            | Paginated queries, no broad listeners            |
 | Firestore writes | 20K/day            | Writes only on user actions                      |
-| EmailJS          | 200 emails/month   | 5-per-hour client throttle; failures shown in UI |
+| EmailJS          | 200 emails/month   | 5-per-hour client throttle; best-effort usage counter in Admin → Settings; check EmailJS for exact usage |
 | Cloudinary       | 25GB storage       | Client-side compress to ≤300KB before upload     |
 | Firebase Auth    | Unlimited on Spark | ✓                                                |
 | Firebase Hosting | 10GB/month         | Use Vercel as primary                            |
