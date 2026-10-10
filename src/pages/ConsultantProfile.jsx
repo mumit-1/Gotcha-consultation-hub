@@ -64,8 +64,7 @@ export default function ConsultantProfile() {
           )
         )
         if (!bSnap.empty) {
-          const wSnap = await getDoc(doc(db, 'users', uid, 'private', 'contact'))
-          if (wSnap.exists()) setWhatsapp(wSnap.data().whatsapp)
+          setWhatsapp(bSnap.docs[0].data().whatsappNumber || '')
         }
       }
 

@@ -8,6 +8,7 @@ import Input from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
 import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { ensureUserDoc } from '../../lib/verifiedWrites'
 
 export default function Login() {
   const [form, setForm]       = useState({ email: '', password: '' })
@@ -22,7 +23,8 @@ export default function Login() {
     if (!form.email || !form.password) return
     setLoading(true)
     try {
-      await signInWithEmailAndPassword(auth, form.email.trim(), form.password)
+      const credential = await signInWithEmailAndPassword(auth, form.email.trim(), form.password)
+      await ensureUserDoc(credential.user)
       navigate(from, { replace: true })
     } catch (err) {
       const msg = {

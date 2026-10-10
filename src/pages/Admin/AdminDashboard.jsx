@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
-  collection, query, orderBy, limit, getDocs, where,
-  updateDoc, doc, serverTimestamp, startAfter,
+  collection, query, orderBy, limit, getDocs, where, getDoc,
+  updateDoc, doc, serverTimestamp, startAfter, setDoc,
 } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
 import PageLayout from '../../components/layout/PageLayout'
@@ -15,6 +15,7 @@ import {
   ChevronRight, CheckCircle, XCircle, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import COURSES from '../../data/courses'
 
 const PAGE_SIZE = 20
 
@@ -179,6 +180,48 @@ function BookingsPanel() {
 
 // ── Settings panel ───────────────────────────────────────────
 function SettingsPanel() {
+  const [seeding, setSeeding] = useState(false)
+  const [courseCheck, setCourseCheck] = useState(null)
+
+  const seedCourses = async () => {
+    setSeeding(true)
+    try {
+      const ref = doc(db, 'config', 'courses')
+      const snap = await getDoc(ref)
+      const currentCodes = snap.exists() && Array.isArray(snap.data().codes)
+        ? snap.data().codes
+        : []
+      const currentSet = new Set(currentCodes)
+      const missing = COURSES.filter(code => !currentSet.has(code))
+      const extra = currentCodes.filter(code => !COURSES.includes(code))
+      await setDoc(ref, { codes: COURSES, updatedAt: serverTimestamp() }, { merge: true })
+      const seededSnap = await getDoc(ref)
+      const savedCodes = seededSnap.data()?.codes
+      const savedSet = new Set(Array.isArray(savedCodes) ? savedCodes : [])
+      const missingAfterSeed = COURSES.filter(code => !savedSet.has(code))
+      const extraAfterSeed = [...savedSet].filter(code => !COURSES.includes(code))
+      if (missingAfterSeed.length || extraAfterSeed.length) {
+        throw new Error('The saved course list did not exactly match the app catalog.')
+      }
+      setCourseCheck({
+        total: COURSES.length,
+        missingBeforeSeed: missing.length,
+        extraBeforeSeed: extra.length,
+        verified: true,
+      })
+      toast.success(`Seeded ${COURSES.length} course codes to config/courses.`)
+    } catch (error) {
+      console.error('[Firestore] seed course catalog failed', {
+        code: error?.code || 'unknown',
+        message: error?.message || String(error),
+        step: 'seed config/courses',
+      })
+      toast.error(`Could not seed courses: ${error.message}`)
+    } finally {
+      setSeeding(false)
+    }
+  }
+
   return (
     <div>
       <h2 className="font-black text-xl uppercase mb-4">Platform Settings</h2>
@@ -187,6 +230,20 @@ function SettingsPanel() {
           Settings are stored in <code className="bg-neo-bg px-1 border border-black">config/settings</code> in Firestore.
           Edit directly in the Firebase console for now, or extend this panel.
         </p>
+        <div className="mt-6 border-t-4 border-black pt-5">
+          <h3 className="font-black text-sm uppercase tracking-wide mb-2">Course Catalog</h3>
+          <p className="font-bold text-sm text-black/60 mb-4">
+            Compare the saved <code>config/courses.codes</code> array against the {COURSES.length} codes in the app catalog, then replace it with the central catalog.
+          </p>
+          <Button variant="secondary" loading={seeding} onClick={seedCourses}>
+            Seed {COURSES.length} Courses
+          </Button>
+          {courseCheck && (
+            <p className="mt-3 font-bold text-xs">
+              Seeded and verified against the local catalog. Before seeding, {courseCheck.missingBeforeSeed} codes were missing and {courseCheck.extraBeforeSeed} extra codes were present.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )

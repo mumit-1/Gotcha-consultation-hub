@@ -38,9 +38,13 @@ service cloud.firestore {
     }
 
     function validCourses(courses) {
+      let catalogPath = /databases/$(database)/documents/config/courses;
       return courses is list &&
         courses.size() > 0 &&
-        courses.size() <= 549;
+        courses.size() <= 50 &&
+        exists(catalogPath) &&
+        get(catalogPath).data.codes is list &&
+        courses.hasOnly(get(catalogPath).data.codes);
     }
 
     function validReview(review) {
@@ -184,7 +188,7 @@ service cloud.firestore {
             .hasOnly(['name', 'bio', 'timezone', 'photoURL', 'isConsultant', 'blockedUsers', 'updatedAt']) &&
           (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isConsultant']) ||
             (request.resource.data.isConsultant == true &&
-             exists(/databases/$(database)/documents/consultants/$(uid)))));
+             existsAfter(/databases/$(database)/documents/consultants/$(uid)))));
       allow delete: if isAdmin();
 
       match /private/{doc} {
@@ -284,9 +288,9 @@ service cloud.firestore {
             .hasOnly(['status', 'whatsappNumber', 'updatedAt']) &&
           request.resource.data.whatsappNumber is string &&
           request.resource.data.whatsappNumber.size() > 0 &&
-          exists(/databases/$(database)/documents/users/$(request.auth.uid)/private/contact) &&
+          existsAfter(/databases/$(database)/documents/consultants/$(request.auth.uid)/private/contact) &&
           request.resource.data.whatsappNumber ==
-            get(/databases/$(database)/documents/users/$(request.auth.uid)/private/contact).data.whatsapp &&
+            getAfter(/databases/$(database)/documents/consultants/$(request.auth.uid)/private/contact).data.whatsapp &&
           request.resource.data.updatedAt == request.time) ||
         (signedIn() && activeUser() &&
           resource.data.consultantId == request.auth.uid &&

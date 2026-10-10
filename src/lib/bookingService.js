@@ -8,6 +8,7 @@ import {
 } from './emailjs'
 import { formatDhaka } from './dhakaTime'
 import { validateDhakaBookingTime } from './dhakaTime'
+import { runVerifiedWrite } from './verifiedWrites'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ export async function createBooking({
   const bookingRef = doc(collection(db, 'bookings'))
   const notificationRef = doc(collection(db, 'notifications', consultantId, 'items'))
 
-  await runTransaction(db, async (tx) => {
+  await runVerifiedWrite('create booking', () => runTransaction(db, async (tx) => {
     const consultantSnap = await tx.get(doc(db, 'consultants', consultantId))
     if (!consultantSnap.exists()) throw new Error('Consultant profile not found')
     const consultant = consultantSnap.data()
@@ -75,7 +76,7 @@ export async function createBooking({
       read: false,
       createdAt: serverTimestamp(),
     })
-  })
+  }))
 
   return bookingRef.id
 }
@@ -87,21 +88,25 @@ export async function acceptBooking(bookingId) {
   if (!consultantId) throw new Error('You must be signed in to accept a request')
 
   const bookingRef = doc(db, 'bookings', bookingId)
-  const contactRef = doc(db, 'users', consultantId, 'private', 'contact')
+  const contactRef = doc(db, 'consultants', consultantId, 'private', 'contact')
 
-  await runTransaction(db, async (tx) => {
+  await runVerifiedWrite('accept booking', () => runTransaction(db, async (tx) => {
     const [snap, contactSnap] = await Promise.all([
       tx.get(bookingRef),
       tx.get(contactRef),
     ])
+    const legacyContactRef = doc(db, 'users', consultantId, 'private', 'contact')
+    const legacyContactSnap = await tx.get(legacyContactRef)
     if (!snap.exists()) throw new Error('Booking not found')
     const b = snap.data()
     if (b.status !== 'PENDING') throw new Error('Booking is no longer pending')
     if (consultantId !== b.consultantId) {
       throw new Error('Only the assigned consultant can accept this request')
     }
-    const consultantWhatsapp = contactSnap.data()?.whatsapp?.trim()
-    if (!contactSnap.exists() || !consultantWhatsapp) {
+    const consultantWhatsapp = (
+      contactSnap.data()?.whatsapp || legacyContactSnap.data()?.whatsapp
+    )?.trim()
+    if (!consultantWhatsapp) {
       throw new Error('Add your WhatsApp number in your consultant profile before accepting requests')
     }
 
@@ -139,13 +144,17 @@ export async function acceptBooking(bookingId) {
       })
     })
 
+    if (!contactSnap.exists()) {
+      tx.set(contactRef, { whatsapp: consultantWhatsapp })
+    }
+
     // Accept the booking, write WhatsApp number
     tx.update(bookingRef, {
       status: 'ACCEPTED',
       whatsappNumber: consultantWhatsapp,
       updatedAt: serverTimestamp(),
     })
-  })
+  }))
 
   // After transaction: fetch booking for email + notification
   const snap  = await getDoc(bookingRef)

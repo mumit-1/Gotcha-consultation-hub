@@ -2,9 +2,9 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
   onAuthStateChanged, signOut, sendEmailVerification,
 } from 'firebase/auth'
-import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
-import { DHAKA_TIME_ZONE } from '../lib/dhakaTime'
+import { ensureUserDoc } from '../lib/verifiedWrites'
 
 const AuthContext = createContext(null)
 
@@ -38,21 +38,15 @@ export function AuthProvider({ children }) {
         if (snap.exists()) {
           setUserDoc({ id: snap.id, ...snap.data() })
         } else {
-          // First-ever login — create the user document
-          const newUser = {
-            uid:          user.uid,
-            name:         user.displayName || user.email.split('@')[0],
-            email:        user.email,
-            photoURL:     user.photoURL || null,
-            bio:          '',
-            timezone:     DHAKA_TIME_ZONE,
-            status:       'active',
-            isConsultant: false,
-            blockedUsers: [],
-            createdAt:    serverTimestamp(),
-            updatedAt:    serverTimestamp(),
-          }
-          setDoc(userRef, newUser).catch(console.error)
+          ensureUserDoc(user)
+            .then(({ userData }) => {
+              if (auth.currentUser?.uid === user.uid) setUserDoc({ id: user.uid, ...userData })
+            })
+            .catch(err => console.error('[Auth] Could not ensure user document', {
+              code: err?.code || 'unknown',
+              message: err?.message || String(err),
+              step: 'ensure user doc',
+            }))
         }
       })
 

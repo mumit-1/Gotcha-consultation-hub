@@ -9,6 +9,7 @@ import Button from '../ui/Button'
 import Textarea from '../ui/Textarea'
 import { Star } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { runVerifiedWrite } from '../../lib/verifiedWrites'
 
 export default function ReviewModal({ booking, currentUid, onClose }) {
   const isConsultant  = booking.consultantId === currentUid
@@ -30,7 +31,7 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
       const consultantRef = doc(db, 'consultants', booking.consultantId)
       const review = { stars, review: text.trim(), createdAt: serverTimestamp() }
 
-      await runTransaction(db, async (tx) => {
+      await runVerifiedWrite('submit review', () => runTransaction(db, async (tx) => {
         const [bookingSnap, reviewSnap] = await Promise.all([
           tx.get(bookingRef),
           tx.get(reviewRef),
@@ -84,7 +85,7 @@ export default function ReviewModal({ booking, currentUid, onClose }) {
             updatedAt: serverTimestamp(),
           })
         }
-      })
+      }))
 
       toast.success('Review submitted! Thank you.')
       onClose()

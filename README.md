@@ -100,7 +100,8 @@ src/
 │   ├── bookingService.js   All booking state transitions + slot locks
 │   ├── cloudinary.js       Image compress + upload
 │   ├── emailjs.js          All 6 email senders + throttle
-│   └── firebase.js         Firebase app init
+│   ├── firebase.js         Firebase app init
+│   └── verifiedWrites.js   Fresh verified tokens, missing user-doc recovery, and write retry
 └── pages/
     ├── Admin/          AdminDashboard
     ├── Auth/           Login, Register, ResetPassword
@@ -194,7 +195,7 @@ The Firestore rules restrict booking changes to valid participant transitions, k
 
 ### 4. Course List
 
-The 549 course codes are loaded from [`src/data/courses.js`](src/data/courses.js) by the app. You do not need to create a Firestore course document or enter codes individually.
+The 549 course codes are loaded from [`src/data/courses.js`](src/data/courses.js) by the app. Consultant profiles can offer up to 50 courses, and selections are checked against `config/courses.codes` in both the app and Firestore rules. An admin must use **Admin → Settings → Seed Courses** to copy the central catalog to `config/courses.codes` before consultant profiles can be saved. The admin action compares the existing list with the local catalog, writes all codes, and verifies the saved result.
 
 ### 5. Create the First Admin
 

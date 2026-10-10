@@ -1,7 +1,7 @@
 /**
  * SINGLE SOURCE OF TRUTH for all course codes.
- * Course selection is sourced from this local catalog; it does not need to be
- * seeded into Firestore.
+ * Course selection is sourced locally and mirrored to config/courses for
+ * Firestore rule validation.
  */
 export const COURSES = [
   "ACT201","ACT202","ACT301","ACT422","ACT423","ACT427","ACT429","ACT431","ACT511",

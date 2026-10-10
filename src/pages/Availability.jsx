@@ -10,6 +10,7 @@ import Input from '../components/ui/Input'
 import { Plus, Trash2, Clock, ToggleLeft, ToggleRight, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { DHAKA_TIME_ZONE, formatDhaka, parseDhakaDateTimeInput } from '../lib/dhakaTime'
+import { runVerifiedWrite } from '../lib/verifiedWrites'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 
@@ -22,6 +23,7 @@ export default function Availability() {
   const [busyUntil, setBusyUntil] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     if (!firebaseUser) return
@@ -34,6 +36,11 @@ export default function Availability() {
       setLoading(false)
     })
   }, [firebaseUser])
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   const addRange = (day) => {
     setWeekly(prev => ({
@@ -59,11 +66,13 @@ export default function Availability() {
   const save = async () => {
     setSaving(true)
     try {
-      await setDoc(doc(db, 'consultants', firebaseUser.uid), {
-        availability: weekly,
-        manualBusy: manualBusy,
-        updatedAt: serverTimestamp(),
-      }, { merge: true })
+      await runVerifiedWrite('save consultant availability', async ({ user }) => {
+        await setDoc(doc(db, 'consultants', user.uid), {
+          availability: weekly,
+          manualBusy,
+          updatedAt: serverTimestamp(),
+        }, { merge: true })
+      })
       toast.success('Availability saved!')
     } catch (err) {
       toast.error('Failed: ' + err.message)
@@ -74,9 +83,18 @@ export default function Availability() {
 
   const toggleManualBusy = async () => {
     if (manualBusy) {
-      setManualBusy(null)
-      await setDoc(doc(db, 'consultants', firebaseUser.uid), { manualBusy: null, updatedAt: serverTimestamp() }, { merge: true })
-      toast.success('You are no longer manually busy')
+      try {
+        await runVerifiedWrite('remove consultant busy status', async ({ user }) => {
+          await setDoc(doc(db, 'consultants', user.uid), {
+            manualBusy: null,
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+        })
+        setManualBusy(null)
+        toast.success('You are no longer manually busy')
+      } catch (err) {
+        toast.error('Failed: ' + err.message)
+      }
     } else {
       if (!busyUntil) { toast.error('Set a "busy until" time first'); return }
       const untilDate = parseDhakaDateTimeInput(busyUntil)
@@ -85,15 +103,24 @@ export default function Availability() {
         return
       }
       const until = Timestamp.fromDate(untilDate)
-      setManualBusy({ until })
-      await setDoc(doc(db, 'consultants', firebaseUser.uid), { manualBusy: { until }, updatedAt: serverTimestamp() }, { merge: true })
-      toast.success('Set as busy until ' + busyUntil)
+      try {
+        await runVerifiedWrite('set consultant busy status', async ({ user }) => {
+          await setDoc(doc(db, 'consultants', user.uid), {
+            manualBusy: { until },
+            updatedAt: serverTimestamp(),
+          }, { merge: true })
+        })
+        setManualBusy({ until })
+        toast.success('Set as busy until ' + busyUntil)
+      } catch (err) {
+        toast.error('Failed: ' + err.message)
+      }
     }
   }
 
   if (loading) return <PageLayout><div className="page-container py-20 text-center font-black uppercase">Loading…</div></PageLayout>
 
-  const isBusy = manualBusy && manualBusy.until?.toMillis() > Date.now()
+  const isBusy = manualBusy && manualBusy.until?.toMillis() > now
 
   return (
     <PageLayout>

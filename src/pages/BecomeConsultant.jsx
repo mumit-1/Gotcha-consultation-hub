@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import {
+  doc, getDoc, serverTimestamp, writeBatch,
+} from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../contexts/AuthContext'
 import PageLayout from '../components/layout/PageLayout'
@@ -10,15 +12,18 @@ import CourseSelector from '../components/courses/CourseSelector'
 import Input from '../components/ui/Input'
 import Textarea from '../components/ui/Textarea'
 import Button from '../components/ui/Button'
-import { Save, Zap, DollarSign } from 'lucide-react'
+import { Save, Zap} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
+import { runVerifiedWrite } from '../lib/verifiedWrites'
 
 export default function BecomeConsultant() {
   const { firebaseUser, userDoc, isVerified } = useAuth()
   const [existing, setExisting] = useState(null)
   const [loading, setLoading]   = useState(false)
   const [fetching, setFetching] = useState(true)
+  const [courseCatalog, setCourseCatalog] = useState(null)
+  const [courseCatalogError, setCourseCatalogError] = useState('')
   const [form, setForm]         = useState({
     bio: '', skills: '', experience: '',
     courses: [],
@@ -29,84 +34,154 @@ export default function BecomeConsultant() {
   useEffect(() => {
     if (!firebaseUser) return
     const load = async () => {
-      const [cSnap, wSnap] = await Promise.all([
-        getDoc(doc(db, 'consultants', firebaseUser.uid)),
-        getDoc(doc(db, 'users', firebaseUser.uid, 'private', 'contact')),
-      ])
-      if (cSnap.exists()) {
-        const d = cSnap.data()
-        setExisting(d)
-        setForm({
-          bio: d.bio || '',
-          skills: d.skills || '',
-          experience: d.experience || '',
-          courses: d.courses || [],
-          price30min: d.price30min ?? 0,
-          priceExtra30min: d.priceExtra30min ?? 0,
-          whatsapp: wSnap.exists() ? wSnap.data().whatsapp || '' : '',
+      try {
+        const [cSnap, consultantContactSnap, legacyContactSnap, courseCatalogSnap] = await Promise.all([
+          getDoc(doc(db, 'consultants', firebaseUser.uid)),
+          getDoc(doc(db, 'consultants', firebaseUser.uid, 'private', 'contact')),
+          getDoc(doc(db, 'users', firebaseUser.uid, 'private', 'contact')),
+          getDoc(doc(db, 'config', 'courses')),
+        ])
+        const courseCodes = courseCatalogSnap.data()?.codes
+        if (
+          !courseCatalogSnap.exists() ||
+          !Array.isArray(courseCodes) ||
+          courseCodes.length === 0 ||
+          courseCodes.some(code => typeof code !== 'string')
+        ) {
+          setCourseCatalog(null)
+          setCourseCatalogError(
+            'The course catalog is missing or invalid. Ask an administrator to seed courses in Admin → Settings before saving a consultant profile.',
+          )
+        } else {
+          setCourseCatalog(new Set(courseCodes))
+          setCourseCatalogError('')
+        }
+        const contactSnap = consultantContactSnap.exists() ? consultantContactSnap : legacyContactSnap
+        if (cSnap.exists()) {
+          const d = cSnap.data()
+          setExisting(d)
+          setForm({
+            bio: d.bio || '',
+            skills: d.skills || '',
+            experience: d.experience || '',
+            courses: d.courses || [],
+            price30min: d.price30min ?? 0,
+            priceExtra30min: d.priceExtra30min ?? 0,
+            whatsapp: contactSnap.exists() ? contactSnap.data().whatsapp || '' : '',
+          })
+        } else if (contactSnap.exists()) {
+          setForm(f => ({ ...f, whatsapp: contactSnap.data().whatsapp || '' }))
+        }
+      } catch (err) {
+        setCourseCatalog(null)
+        setCourseCatalogError(`Could not load the course catalog: ${err.message}`)
+        console.error('[Firestore] load consultant profile failed', {
+          code: err?.code || 'unknown',
+          message: err?.message || String(err),
+          step: 'load consultant profile',
         })
-      } else if (wSnap.exists()) {
-        setForm(f => ({ ...f, whatsapp: wSnap.data().whatsapp || '' }))
+        toast.error(`Could not load consultant profile: ${err.message}`)
+      } finally {
+        setFetching(false)
       }
-      setFetching(false)
     }
     load()
   }, [firebaseUser])
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!isVerified) { toast.error('Please verify your email first'); return }
-    if (!userDoc || userDoc.status !== 'active') {
-      toast.error('Your active account profile is still loading. Please try again in a moment.')
-      return
-    }
     if (!form.whatsapp.trim()) {
       toast.error('WhatsApp number is required')
       return
     }
+    if (!courseCatalog) {
+      toast.error(courseCatalogError || 'The course catalog is unavailable. Ask an administrator to seed courses.')
+      return
+    }
     if (form.courses.length === 0) { toast.error('Select at least one course'); return }
+    if (form.courses.length > 50) {
+      toast.error('Select no more than 50 courses.')
+      return
+    }
+    if (form.courses.some(code => !courseCatalog.has(code))) {
+      toast.error('One or more selected courses are not in the current Firestore catalog. Refresh the page or ask an administrator to seed courses.')
+      return
+    }
+
+    const price30min = Number(form.price30min)
+    const priceExtra30min = Number(form.priceExtra30min)
+    if (
+      !Number.isFinite(price30min) || price30min < 0 ||
+      !Number.isFinite(priceExtra30min) || priceExtra30min < 0
+    ) {
+      toast.error('Prices must be valid numbers greater than or equal to zero.')
+      return
+    }
 
     setLoading(true)
-    let saveStep = 'consultant profile'
     try {
-      const consultantData = {
-        uid: firebaseUser.uid,
-        name: userDoc?.name || '',
-        photoURL: userDoc?.photoURL || null,
-        bio: form.bio.trim(),
-        skills: form.skills.trim(),
-        experience: form.experience.trim(),
-        courses: form.courses,
-        price30min: Number(form.price30min) || 0,
-        priceExtra30min: Number(form.priceExtra30min) || 0,
-        ratingSum: existing?.ratingSum ?? 0,
-        ratingCount: existing?.ratingCount ?? 0,
-        completedCount: existing?.completedCount ?? 0,
-        isVerified: existing?.isVerified ?? false,
-        manualBusy: existing?.manualBusy ?? null,
-        updatedAt: serverTimestamp(),
-        ...(existing ? {} : { createdAt: serverTimestamp() }),
-      }
+      const result = await runVerifiedWrite('save consultant profile, account role, and private contact', async ({ user, userData }) => {
+        const catalogSnap = await getDoc(doc(db, 'config', 'courses'))
+        const currentCodes = catalogSnap.data()?.codes
+        if (
+          !catalogSnap.exists() ||
+          !Array.isArray(currentCodes) ||
+          form.courses.some(code => !currentCodes.includes(code))
+        ) {
+          throw new Error('The course catalog is missing, invalid, or does not include every selected course. Ask an administrator to seed courses, then try again.')
+        }
+        const consultantRef = doc(db, 'consultants', user.uid)
+        const userRef = doc(db, 'users', user.uid)
+        const contactRef = doc(db, 'consultants', user.uid, 'private', 'contact')
+        const consultantSnap = await getDoc(consultantRef)
+        const isCreating = !consultantSnap.exists()
+        const saved = consultantSnap.data() || {}
+        const updatedAt = serverTimestamp()
+        const profileFields = {
+          name: userData.name || user.displayName || '',
+          photoURL: userData.photoURL || user.photoURL || null,
+          bio: form.bio.trim(),
+          skills: form.skills.trim(),
+          experience: form.experience.trim(),
+          courses: [...new Set(form.courses)],
+          price30min,
+          priceExtra30min,
+          updatedAt,
+        }
+        const batch = writeBatch(db)
 
-      await setDoc(doc(db, 'consultants', firebaseUser.uid), consultantData, { merge: true })
+        if (isCreating) {
+          const emptyAvailability = Object.fromEntries(
+            ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+              .map(day => [day, []]),
+          )
+          batch.set(consultantRef, {
+            uid: user.uid,
+            ...profileFields,
+            ratingSum: 0,
+            ratingCount: 0,
+            completedCount: 0,
+            isVerified: false,
+            manualBusy: null,
+            availability: emptyAvailability,
+            createdAt: serverTimestamp(),
+          })
+        } else {
+          batch.update(consultantRef, profileFields)
+        }
 
-      // Save WhatsApp to private subcollection
-      saveStep = 'private contact details'
-      await setDoc(doc(db, 'users', firebaseUser.uid, 'private', 'contact'), {
-        whatsapp: form.whatsapp.trim(),
+        batch.set(contactRef, { whatsapp: form.whatsapp.trim() })
+        batch.update(userRef, { isConsultant: true, updatedAt: serverTimestamp() })
+        await batch.commit()
+        return {
+          created: isCreating,
+          profile: { ...saved, ...profileFields, uid: user.uid },
+        }
       })
-
-      // Mark user as consultant
-      saveStep = 'account profile'
-      await updateDoc(doc(db, 'users', firebaseUser.uid), {
-        isConsultant: true,
-        updatedAt: serverTimestamp(),
-      })
-
-      toast.success(existing ? 'Consultant profile updated!' : 'You are now a consultant! 🎉')
-      setExisting(consultantData)
+      toast.success(result.created ? 'You are now a consultant! 🎉' : 'Consultant profile updated!')
+      setExisting(result.profile)
     } catch (err) {
-      toast.error(`Could not save ${saveStep}: ${err.message}`)
+      toast.error(`Could not save consultant profile: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -146,7 +221,15 @@ export default function BecomeConsultant() {
 
           {!isVerified && (
             <div className="card p-4 shadow-neo-sm bg-neo-secondary mb-6 border-neo-accent">
-              <p className="font-black text-sm uppercase">You must verify your email before saving a consultant profile.</p>
+              <p className="font-black text-sm uppercase">
+                Verify your email before saving. If you just verified, you can try saving now; the app will refresh the verification status first.
+              </p>
+            </div>
+          )}
+
+          {courseCatalogError && (
+            <div role="alert" className="card p-4 shadow-neo-sm bg-neo-secondary mb-6 border-neo-accent">
+              <p className="font-black text-sm">{courseCatalogError}</p>
             </div>
           )}
 
@@ -158,11 +241,25 @@ export default function BecomeConsultant() {
                 currentUrl={userDoc?.photoURL}
                 name={userDoc?.name || 'U'}
                 onUpload={async (url) => {
-                  await updateDoc(doc(db, 'users', firebaseUser.uid), { photoURL: url })
-                  if (existing) {
-                    await updateDoc(doc(db, 'consultants', firebaseUser.uid), { photoURL: url, updatedAt: serverTimestamp() })
+                  try {
+                    await runVerifiedWrite('update profile photo', async ({ user }) => {
+                      const batch = writeBatch(db)
+                      batch.update(doc(db, 'users', user.uid), {
+                        photoURL: url,
+                        updatedAt: serverTimestamp(),
+                      })
+                      if (existing) {
+                        batch.update(doc(db, 'consultants', user.uid), {
+                          photoURL: url,
+                          updatedAt: serverTimestamp(),
+                        })
+                      }
+                      await batch.commit()
+                    })
+                    toast.success('Photo updated!')
+                  } catch (err) {
+                    toast.error(`Could not update photo: ${err.message}`)
                   }
-                  toast.success('Photo updated!')
                 }}
               />
             </div>
@@ -185,8 +282,15 @@ export default function BecomeConsultant() {
                   selected={form.courses}
                   onChange={codes => setForm(f => ({ ...f, courses: codes }))}
                   label="Select courses"
-                  error={form.courses.length === 0 ? 'Select at least one course' : ''}
+                  error={
+                    form.courses.length === 0
+                      ? 'Select at least one course'
+                      : form.courses.length > 50
+                        ? 'Select no more than 50 courses'
+                        : ''
+                  }
                 />
+                <p className="mt-2 font-bold text-xs text-black/50">Choose up to 50 of the 549 available courses.</p>
               </div>
             </div>
 
@@ -242,7 +346,7 @@ export default function BecomeConsultant() {
               </p>
             </div>
 
-            <Button type="submit" variant="primary" full loading={loading} className="btn-lg" disabled={!isVerified}>
+            <Button type="submit" variant="primary" full loading={loading} disabled={loading || !courseCatalog} className="btn-lg">
               <Save className="h-4 w-4" strokeWidth={3} />
               {existing ? 'Update Profile' : 'Activate Consultant Profile'}
             </Button>

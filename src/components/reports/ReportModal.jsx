@@ -1,13 +1,12 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
-import { useAuth } from '../../contexts/AuthContext'
 import Modal from '../ui/Modal'
 import Button from '../ui/Button'
 import Textarea from '../ui/Textarea'
 import Select from '../ui/Select'
 import toast from 'react-hot-toast'
+import { runVerifiedWrite } from '../../lib/verifiedWrites'
 
 const REPORT_TYPES = [
   'Spam',
@@ -19,7 +18,6 @@ const REPORT_TYPES = [
 ]
 
 export default function ReportModal({ open, onClose, targetId, targetName }) {
-  const { firebaseUser } = useAuth()
   const [type, setType]         = useState(REPORT_TYPES[0])
   const [description, setDesc]  = useState('')
   const [loading, setLoading]   = useState(false)
@@ -29,13 +27,15 @@ export default function ReportModal({ open, onClose, targetId, targetName }) {
     if (!description.trim()) { toast.error('Please describe the issue'); return }
     setLoading(true)
     try {
-      await addDoc(collection(db, 'reports'), {
-        reporterId: firebaseUser.uid,
-        targetId,
-        type,
-        description: description.trim(),
-        status: 'pending',
-        createdAt: serverTimestamp(),
+      await runVerifiedWrite('submit report', async ({ user }) => {
+        await addDoc(collection(db, 'reports'), {
+          reporterId: user.uid,
+          targetId,
+          type,
+          description: description.trim(),
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        })
       })
       toast.success('Report submitted. We will review it.')
       setDesc('')
