@@ -298,11 +298,10 @@ export default function FindConsultants() {
         <AnimatePresence>
           {showFilters && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.15 }}
             >
               <div className="card p-6 shadow-neo-md mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { RequireAuth, RequireAdmin, RedirectIfAuth } from './components/auth/ProtectedRoute'
-
+import { Analytics } from '@vercel/analytics/react'
 // Pages
 import Landing          from './pages/Landing'
 import Login            from './pages/Auth/Login'
@@ -29,6 +29,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppServices />
+          <Analytics />
         <Routes>
           {/* Public */}
           <Route path="/"              element={<Landing />} />
